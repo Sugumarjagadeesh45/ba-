@@ -24,12 +24,12 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
     console.log('📢 Sending ride request to drivers...');
     console.log(`🚗 Vehicle type: ${rideData.vehicleType}`);
     
-    // ✅ IMPORTANT: FILTER BY VEHICLE TYPE
-    const allDrivers = await Driver.find({ 
-      status: "Live",
-      vehicleType: rideData.vehicleType, // ✅ FILTER BY EXACT VEHICLE TYPE
-      fcmToken: { $exists: true, $ne: null, $ne: '' }
-    }).select('fcmToken driverId name vehicleType status location');
+// In socket.js - sendRideRequestToAllDrivers function
+const allDrivers = await Driver.find({ 
+  status: "Live",
+  vehicleType: rideData.vehicleType, // ✅ FILTER BY EXACT VEHICLE TYPE
+  fcmToken: { $exists: true, $ne: null, $ne: '' }
+});
     
     console.log(`📊 ${rideData.vehicleType} drivers available: ${allDrivers.length}`);
     console.log(`📱 Drivers with FCM tokens: ${allDrivers.filter(d => d.fcmToken).length}`);
