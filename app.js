@@ -1311,6 +1311,112 @@ app.post('/api/auth/get-driver-info', async (req, res) => {
 });
 
 
+
+
+// ✅ Get Complete Driver Info - FIXED VERSION
+app.post('/api/auth/get-complete-driver-info', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    console.log('🔍 COMPLETE: Getting complete driver info for:', phoneNumber);
+
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+
+    // Clean phone number
+    const cleanPhone = phoneNumber.replace('+91', '').replace(/\D/g, '');
+    
+    const Driver = require('./models/driver/driver');
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone: cleanPhone },
+        { phoneNumber: cleanPhone }
+      ]
+    })
+    .select('-passwordHash -__v')
+    .lean();
+
+    if (!driver) {
+      console.log(`❌ COMPLETE: Driver not found for phone: ${cleanPhone}`);
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Driver not found',
+        message: 'This driver does not exist in our database. Please register first.'
+      });
+    }
+
+    console.log(`✅ COMPLETE: Driver found: ${driver.driverId} - ${driver.name}`);
+    console.log(`   🚗 Vehicle Type: ${driver.vehicleType}`);
+    console.log(`   🚙 Vehicle Number: ${driver.vehicleNumber}`);
+    console.log(`   💰 Wallet: ₹${driver.wallet || 0}`);
+    console.log(`   📱 Status: ${driver.status}`);
+
+    // Generate JWT token
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { 
+        id: driver._id,
+        driverId: driver.driverId,
+        role: 'driver' 
+      },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      token: token,
+      driver: {
+        // Basic Info
+        driverId: driver.driverId,
+        name: driver.name,
+        phone: driver.phone,
+        
+        // Vehicle Info (IMPORTANT FOR RIDE MATCHING)
+        vehicleType: driver.vehicleType || "taxi",
+        vehicleNumber: driver.vehicleNumber || "",
+        
+        // Financial
+        wallet: driver.wallet || 0,
+        earnings: driver.earnings || 0,
+        
+        // Status & Location
+        status: driver.status || "Offline",
+        location: driver.location || { type: 'Point', coordinates: [0, 0] },
+        
+        // Personal
+        email: driver.email || "",
+        licenseNumber: driver.licenseNumber || "",
+        aadharNumber: driver.aadharNumber || "",
+        
+        // FCM
+        fcmToken: driver.fcmToken || "",
+        platform: driver.platform || "android",
+        
+        // Stats
+        totalRides: driver.totalRides || 0,
+        rating: driver.rating || 0,
+        
+        // Timestamps
+        createdAt: driver.createdAt,
+        lastUpdate: driver.lastUpdate
+      },
+      message: 'Complete driver info retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ COMPLETE: Get driver info error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get driver info',
+      error: error.message 
+    });
+  }
+});
+
 // ✅ SIMPLE TEST ENDPOINT - Works with proxy
 app.get('/api/orders/test-connection', (req, res) => {
   console.log('🧪 Test connection endpoint hit');
