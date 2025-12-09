@@ -17,15 +17,17 @@ const userLocationTracking = new Map();
 
 
 
+
+
 const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
   try {
     console.log('📢 Sending ride request to drivers...');
     console.log(`🚗 Vehicle type: ${rideData.vehicleType}`);
     
-    // ✅ FILTER BY VEHICLE TYPE
+    // ✅ IMPORTANT: FILTER BY VEHICLE TYPE
     const allDrivers = await Driver.find({ 
       status: "Live",
-      vehicleType: rideData.vehicleType, // ✅ FILTER BY VEHICLE TYPE
+      vehicleType: rideData.vehicleType, // ✅ FILTER BY EXACT VEHICLE TYPE
       fcmToken: { $exists: true, $ne: null, $ne: '' }
     }).select('fcmToken driverId name vehicleType status location');
     
@@ -50,6 +52,7 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
       ...rideData,
       rideId: rideData.rideId,
       _id: savedRide?._id?.toString() || null,
+      vehicleType: rideData.vehicleType, // ✅ INCLUDE VEHICLE TYPE
       timestamp: new Date().toISOString()
     });
 
@@ -66,7 +69,7 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
         drop: JSON.stringify(rideData.drop || {}),
         fare: rideData.fare?.toString() || "0",
         distance: rideData.distance?.toString() || "0",
-        vehicleType: rideData.vehicleType || "taxi",
+        vehicleType: rideData.vehicleType, // ✅ INCLUDE VEHICLE TYPE
         userName: rideData.userName || "Customer",
         userMobile: rideData.userMobile || "N/A",
         otp: rideData.otp || "0000",
@@ -83,8 +86,6 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
         notificationData
       );
 
-      console.log('📊 FCM Notification Result:', fcmResult);
-
       return {
         success: fcmResult.successCount > 0,
         driversNotified: fcmResult.successCount,
@@ -95,18 +96,7 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
           `FCM sent to ${fcmResult.successCount} ${rideData.vehicleType} drivers` : 
           `FCM failed: ${fcmResult.errors?.join(', ') || 'Unknown error'}`
       };
-    } else {
-      console.log(`⚠️ No ${rideData.vehicleType} drivers with FCM tokens`);
-      return {
-        success: false,
-        driversNotified: 0,
-        totalDrivers: 0,
-        fcmSent: false,
-        vehicleType: rideData.vehicleType,
-        fcmMessage: `No ${rideData.vehicleType} drivers with FCM tokens available`
-      };
     }
-
   } catch (error) {
     console.error('❌ Error in notification system:', error);
     return {
@@ -117,6 +107,8 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
     };
   }
 };
+
+
 
 
 
