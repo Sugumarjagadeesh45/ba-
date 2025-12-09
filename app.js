@@ -1148,7 +1148,69 @@ console.log("📂 Static files served from /uploads");
 console.log("📦 Loading order routes...");
 
 
-
+// In app.js - Add this endpoint to update driver status without changing vehicle type
+app.post('/api/drivers/update-status', async (req, res) => {
+  try {
+    const { driverId, status, vehicleType, location } = req.body;
+    
+    console.log(`🔄 Updating driver status: ${driverId} - Status: ${status} - Vehicle: ${vehicleType}`);
+    
+    const Driver = require('./models/driver/driver');
+    
+    const updateData = {
+      status: status,
+      lastUpdate: new Date()
+    };
+    
+    // ✅ Only update vehicleType if provided and valid
+    if (vehicleType && vehicleType !== "taxi") {
+      updateData.vehicleType = vehicleType;
+    }
+    
+    // Update location if provided
+    if (location && location.latitude && location.longitude) {
+      updateData.location = {
+        type: "Point",
+        coordinates: [location.longitude, location.latitude]
+      };
+    }
+    
+    const driver = await Driver.findOneAndUpdate(
+      { driverId: driverId },
+      updateData,
+      { new: true }
+    );
+    
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+    
+    console.log(`✅ Driver ${driverId} updated: Status=${status}, Vehicle=${driver.vehicleType}`);
+    
+    res.json({
+      success: true,
+      message: "Driver status updated",
+      driver: {
+        driverId: driver.driverId,
+        name: driver.name,
+        status: driver.status,
+        vehicleType: driver.vehicleType,
+        vehicleNumber: driver.vehicleNumber
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error updating driver status:', error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update driver status",
+      error: error.message
+    });
+  }
+});
 // In app.js or driverRoutes.js
 app.get('/api/test-drivers', async (req, res) => {
   try {
