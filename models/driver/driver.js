@@ -6,7 +6,7 @@ const driverSchema = new mongoose.Schema(
     driverId: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     phone: { type: String, required: true, unique: true },
-    passwordHash: { type: String, required: true },
+
     email: { type: String, default: '' },
     dob: { type: Date, default: null },
     licenseNumber: { type: String, required: true, unique: true },
@@ -50,8 +50,7 @@ const driverSchema = new mongoose.Schema(
     logoutTime: { type: String },
     earnings: { type: Number, default: 0 },
 
-    // ✅ Security & account settings
-    mustChangePassword: { type: Boolean, default: true },
+
     lastUpdate: { type: Date, default: Date.now },
   },
   { timestamps: true }

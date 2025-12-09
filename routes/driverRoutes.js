@@ -170,6 +170,127 @@ router.post("/create-simple", upload.none(), async (req, res) => {
   }
 });
 
+
+
+
+// ✅ Get complete driver data with all fields
+router.post('/get-complete-driver-data', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    console.log('🔍 Getting COMPLETE driver data for:', phoneNumber);
+
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+
+    // Clean phone number
+    const cleanPhone = phoneNumber.replace('+91', '').replace(/\D/g, '');
+    
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone: cleanPhone },
+        { phoneNumber: cleanPhone }
+      ]
+    })
+    .select('-passwordHash') // Exclude password
+    .lean(); // Return plain object
+
+    if (!driver) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Driver not found' 
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        id: driver._id,
+        driverId: driver.driverId,
+        role: 'driver' 
+      },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '30d' }
+    );
+
+    console.log(`✅ COMPLETE Driver data retrieved: ${driver.driverId}`);
+    console.log(`   Vehicle Type: ${driver.vehicleType}`);
+    console.log(`   Vehicle Number: ${driver.vehicleNumber}`);
+    console.log(`   Wallet: ${driver.wallet}`);
+    console.log(`   Status: ${driver.status}`);
+
+    res.json({
+      success: true,
+      token: token,
+      driver: {
+        // Personal Info
+        driverId: driver.driverId,
+        name: driver.name,
+        phone: driver.phone,
+        email: driver.email || '',
+        dob: driver.dob || null,
+        
+        // Vehicle Info
+        vehicleType: driver.vehicleType,
+        vehicleNumber: driver.vehicleNumber,
+        
+        // Documents
+        licenseNumber: driver.licenseNumber || '',
+        aadharNumber: driver.aadharNumber || '',
+        bankAccountNumber: driver.bankAccountNumber || '',
+        ifscCode: driver.ifscCode || '',
+        licenseDocument: driver.licenseDocument || '',
+        aadharDocument: driver.aadharDocument || '',
+        
+        // Status & Location
+        status: driver.status || 'Offline',
+        wallet: driver.wallet || 0,
+        location: driver.location || { type: 'Point', coordinates: [0, 0] },
+        
+        // FCM & Platform
+        fcmToken: driver.fcmToken || '',
+        platform: driver.platform || 'android',
+        notificationEnabled: driver.notificationEnabled || true,
+        
+        // Performance
+        active: driver.active || true,
+        totalPayment: driver.totalPayment || 0,
+        settlement: driver.settlement || 0,
+        hoursLive: driver.hoursLive || 0,
+        dailyHours: driver.dailyHours || 0,
+        dailyRides: driver.dailyRides || 0,
+        totalRides: driver.totalRides || 0,
+        rating: driver.rating || 0,
+        totalRatings: driver.totalRatings || 0,
+        earnings: driver.earnings || 0,
+        
+        // Security
+        mustChangePassword: driver.mustChangePassword || false,
+        
+        // Timestamps
+        createdAt: driver.createdAt,
+        updatedAt: driver.updatedAt,
+        lastUpdate: driver.lastUpdate
+      },
+      message: 'Complete driver data fetched successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting complete driver data:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get driver data',
+      error: error.message 
+    });
+  }
+});
+
+
+
+
 // Update driver wallet
 router.put('/driver/:driverId/wallet', async (req, res) => {
   try {
