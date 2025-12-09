@@ -16,102 +16,135 @@ const userLocationTracking = new Map();
 
 
 
+
 const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
   try {
-    console.log('📢 Sending FCM notifications to ALL drivers...');
-    
-    // Get ALL active drivers with FCM tokens
-    const allDrivers = await Driver.find({ 
+    console.log('📢 Sending ride request...');
+    console.log(`🚗 Requested Vehicle Type: ${rideData.vehicleType}`);
+
+    // ⭐ 1) FILTER DRIVERS BASED ON VEHICLE TYPE + ONLINE + NEARBY ⭐
+    const allDrivers = await Driver.find({
       status: "Live",
-      fcmToken: { $exists: true, $ne: null, $ne: '' }
-    }).select('fcmToken driverId name vehicleType');
-    
-    console.log(`📊 Total online drivers: ${allDrivers.length}`);
-    console.log(`📱 Drivers with FCM tokens: ${allDrivers.filter(d => d.fcmToken).length}`);
+      vehicleType: rideData.vehicleType,              // ✔ filter by selected vehicle
+      fcmToken: { $exists: true, $ne: null, $ne: '' }, // ✔ only drivers with FCM token
+      "location.lat": { $exists: true },               // ✔ live location exists
+      "location.lng": { $exists: true }
+    }).select("fcmToken driverId name vehicleType location");
+
+    console.log(`📊 Total ${rideData.vehicleType} drivers online: ${allDrivers.length}`);
 
     if (allDrivers.length === 0) {
-      console.log('⚠️ No drivers with FCM tokens found');
+      console.log(`❌ No drivers available for: ${rideData.vehicleType}`);
       return {
         success: false,
-        message: 'No drivers with FCM tokens available',
-        sentCount: 0,
-        totalDrivers: 0,
+        message: `No ${rideData.vehicleType} drivers available`,
         fcmSent: false
       };
     }
 
-    // Always send socket notification as primary method
-    console.log('🔔 Sending socket notification to all drivers...');
-    io.emit("newRideRequest", {
-      ...rideData,
-      rideId: rideData.rideId,
-      _id: savedRide?._id?.toString() || null,
-      timestamp: new Date().toISOString()
+    // ⭐ 2) FILTER NEARBY DRIVERS BASED ON DISTANCE ⭐
+    const userLat = rideData.pickup.lat;
+    const userLng = rideData.pickup.lng;
+
+    const getDistance = (lat1, lng1, lat2, lng2) => {
+      const R = 6371; // radius of earth
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    };
+
+    const nearbyDrivers = allDrivers.filter((driver) => {
+      const d = getDistance(
+        userLat,
+        userLng,
+        driver.location.lat,
+        driver.location.lng
+      );
+      return d <= 7; // ✔ only drivers within 7KM
     });
 
-    // FCM notification to drivers with tokens
-    const driversWithFCM = allDrivers.filter(driver => driver.fcmToken);
-    
-    if (driversWithFCM.length > 0) {
-      console.log(`🎯 Sending FCM to ${driversWithFCM.length} drivers`);
-      
-      // FIXED: Ensure all data values are strings
-      const notificationData = {
-        type: "ride_request",
-        rideId: rideData.rideId,
-        pickup: JSON.stringify(rideData.pickup || {}),
-        drop: JSON.stringify(rideData.drop || {}),
-        fare: rideData.fare?.toString() || "0",
-        distance: rideData.distance?.toString() || "0",
-        vehicleType: rideData.vehicleType || "taxi",
-        userName: rideData.userName || "Customer",
-        userMobile: rideData.userMobile || "N/A",
-        otp: rideData.otp || "0000",
-        timestamp: new Date().toISOString(),
-        priority: "high",
-        click_action: "FLUTTER_NOTIFICATION_CLICK",
-        sound: "default"
-      };
+    console.log(`📍 Nearby Drivers (within 7 KM): ${nearbyDrivers.length}`);
 
-      const fcmResult = await sendNotificationToMultipleDrivers(
-        driversWithFCM.map(d => d.fcmToken),
-        "🚖 New Ride Request!",
-        `Pickup: ${rideData.pickup?.address?.substring(0, 40) || 'Location'}... | Fare: ₹${rideData.fare}`,
-        notificationData
-      );
-
-      console.log('📊 FCM Notification Result:', fcmResult);
-
-      return {
-        success: fcmResult.successCount > 0,
-        driversNotified: fcmResult.successCount,
-        totalDrivers: driversWithFCM.length,
-        fcmSent: fcmResult.successCount > 0,
-        fcmMessage: fcmResult.successCount > 0 ? 
-          `FCM sent to ${fcmResult.successCount} drivers` : 
-          `FCM failed: ${fcmResult.errors?.join(', ') || 'Unknown error'}`
-      };
-    } else {
-      console.log('⚠️ No drivers with FCM tokens');
+    if (nearbyDrivers.length === 0) {
       return {
         success: false,
-        driversNotified: 0,
-        totalDrivers: 0,
-        fcmSent: false,
-        fcmMessage: "No drivers with FCM tokens available"
+        message: `No nearby ${rideData.vehicleType} drivers`,
+        fcmSent: false
       };
     }
 
+    // ⭐ 3) SEND SOCKET NOTIFICATION (ONLY TO NEARBY DRIVERS) ⭐
+    console.log("📡 Sending socket request to selected drivers...");
+    nearbyDrivers.forEach((driver) => {
+      io.to(driver.driverId.toString()).emit("newRideRequest", {
+        ...rideData,
+        rideId: rideData.rideId,
+        driverId: driver.driverId,
+        _id: savedRide?._id?.toString(),
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // ⭐ 4) SEND FCM NOTIFICATION ⭐
+    const driverTokens = nearbyDrivers.map((d) => d.fcmToken);
+
+    console.log(`📨 Sending FCM to ${driverTokens.length} drivers`);
+
+    const notificationData = {
+      type: "ride_request",
+      rideId: rideData.rideId,
+      pickup: JSON.stringify(rideData.pickup),
+      drop: JSON.stringify(rideData.drop),
+      fare: rideData.fare?.toString() || "0",
+      distance: rideData.distance?.toString() || "0",
+      vehicleType: rideData.vehicleType,
+      userName: rideData.userName,
+      userMobile: rideData.userMobile,
+      otp: rideData.otp,
+      timestamp: new Date().toISOString(),
+      priority: "high",
+      click_action: "FLUTTER_NOTIFICATION_CLICK",
+      sound: "default"
+    };
+
+    const fcmResult = await sendNotificationToMultipleDrivers(
+      driverTokens,
+      "🚖 New Ride Request!",
+      `Pickup: ${rideData.pickup?.address?.substring(0, 40)}... | Fare: ₹${rideData.fare}`,
+      notificationData
+    );
+
+    console.log("📊 FCM Result:", fcmResult);
+
+    return {
+      success: true,
+      totalDrivers: nearbyDrivers.length,
+      fcmSent: fcmResult.successCount > 0,
+      message: `Ride request sent to ${nearbyDrivers.length} drivers`
+    };
+
   } catch (error) {
-    console.error('❌ Error in notification system:', error);
+    console.error("❌ Error sending ride request:", error);
+
     return {
       success: false,
       error: error.message,
-      fcmSent: false,
-      fcmMessage: `FCM error: ${error.message}`
+      fcmSent: false
     };
   }
 };
+
+
+
+
+
 const broadcastPricesToAllUsers = () => {
   try {
     const currentPrices = ridePriceController.getCurrentPrices();
@@ -863,7 +896,8 @@ socket.on("bookRide", async (data, callback) => {
 
     
 
-socket.on("acceptRide", async (data, callback) => {
+    
+    socket.on("acceptRide", async (data, callback) => {
   const { rideId, driverId, driverName } = data;
   console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
   console.log("📥 Acceptance Data:", { rideId, driverId, driverName });
@@ -872,7 +906,7 @@ socket.on("acceptRide", async (data, callback) => {
     // FIND RIDE IN DATABASE
     console.log(`🔍 Looking for ride: ${rideId}`);
     const ride = await Ride.findOne({ RAID_ID: rideId });
-   
+    
     if (!ride) {
       console.error(`❌ Ride ${rideId} not found in database`);
       if (typeof callback === "function") {
@@ -883,209 +917,101 @@ socket.on("acceptRide", async (data, callback) => {
     
     console.log(`✅ Found ride: ${ride.RAID_ID}, Status: ${ride.status}`);
 
-    // ✅ CRITICAL FIX: IMMEDIATELY NOTIFY ALL OTHER DRIVERS
-    // This should happen BEFORE any database updates
-    console.log(`📢 IMMEDIATELY NOTIFYING ALL DRIVERS THAT RIDE ${rideId} IS TAKEN`);
+    // GET DRIVER'S CURRENT LIVE LOCATION FROM activeDriverSockets
+    let driverLat = 0;
+    let driverLng = 0;
+    let driverCurrentLocation = null;
     
-    // Method 1: Broadcast to all drivers except the one who accepted
-    socket.broadcast.emit("rideTakenByDriver", {
-      rideId: rideId,
-      driverId: driverId,
-      driverName: driverName,
-      message: "This ride has already been accepted by another driver. Please wait for the next ride request.",
-      timestamp: new Date().toISOString()
-    });
-
-    // Method 2: Specific event for ride already accepted
-    socket.broadcast.emit("rideAlreadyAccepted", {
-      rideId: rideId,
-      acceptedBy: driverName,
-      message: "This ride has already been accepted by another driver. Please wait for the next ride request.",
-      timestamp: new Date().toISOString()
-    });
-
-    // Method 3: Global notification
-    io.emit("rideStatusUpdate", {
-      rideId: rideId,
-      status: "accepted",
-      acceptedBy: driverId,
-      message: "Ride accepted by another driver",
-      timestamp: new Date().toISOString()
-    });
-
-    console.log(`✅ Notified all other drivers that ride ${rideId} was taken by ${driverName}`);
-
-    // CHECK IF RIDE IS ALREADY ACCEPTED (existing logic)
-    if (ride.status === "accepted") {
-      console.log(`🚫 Ride ${rideId} already accepted by: ${ride.driverId}`);
-     
-      if (typeof callback === "function") {
-        callback({
-          success: false,
-          message: "This ride has already been accepted by another driver."
+    if (activeDriverSockets.has(driverId)) {
+      const driverData = activeDriverSockets.get(driverId);
+      driverCurrentLocation = driverData.location;
+      driverLat = driverData.location.latitude;
+      driverLng = driverData.location.longitude;
+      
+      console.log(`📍 Driver's CURRENT LIVE LOCATION found:`, {
+        latitude: driverLat,
+        longitude: driverLng,
+        source: 'activeDriverSockets (real-time)'
+      });
+    } else {
+      // Fallback to driver's last known location from database
+      const driver = await Driver.findOne({ driverId });
+      if (driver && driver.location && driver.location.coordinates) {
+        driverLat = driver.location.coordinates[1];
+        driverLng = driver.location.coordinates[0];
+        console.log(`📍 Using driver's last known location from database:`, {
+          latitude: driverLat,
+          longitude: driverLng
         });
       }
-      return;
     }
 
+    // CRITICAL FIX: Send driver's CURRENT location, NOT pickup location
+    const driverData = {
+      success: true,
+      rideId: ride.RAID_ID,
+      driverId: driverId,
+      driverName: driverName,
+      driverMobile: ride.driverMobile || "N/A",
+      driverLat: driverLat, // ✅ SEND DRIVER'S CURRENT LOCATION
+      driverLng: driverLng, // ✅ SEND DRIVER'S CURRENT LOCATION
+      driverCurrentLocation: driverCurrentLocation, // ✅ Additional field for clarity
+      otp: ride.otp,
+      pickup: ride.pickup,
+      drop: ride.drop,
+      status: ride.status,
+      vehicleType: ride.rideType || "taxi",
+      userName: ride.name,
+      userMobile: ride.userMobile || "N/A",
+      timestamp: new Date().toISOString(),
+      fare: ride.fare || ride.price || 0,
+      distance: ride.distance || "0 km",
+      locationType: "driver_live_location" // ✅ Indicate this is live location
+    };
 
-        // UPDATE RIDE STATUS
-        console.log(`🔄 Updating ride status to 'accepted'`);
-        ride.status = "accepted";
-        ride.driverId = driverId;
-        ride.driverName = driverName;
+    // Send confirmation to driver
+    if (typeof callback === "function") {
+      console.log("📨 Sending callback to driver");
+      callback(driverData);
+    }
 
-        // GET DRIVER DETAILS
-        const driver = await Driver.findOne({ driverId });
-       
-        if (driver) {
-          ride.driverMobile = driver.phone;
-          console.log(`📱 Driver mobile: ${driver.phone}`);
-        } else {
-          ride.driverMobile = "N/A";
-          console.log(`⚠️ Driver not found in Driver collection`);
-        }
-
-        // ENSURE OTP EXISTS
-        if (!ride.otp) {
-          const otp = Math.floor(1000 + Math.random() * 9000).toString();
-          ride.otp = otp;
-          console.log(`🔢 Generated new OTP: ${otp}`);
-        }
-
-        // SAVE TO DATABASE
-        await ride.save();
-        console.log(`💾 Ride saved successfully`);
-
-        // Update in-memory ride status if exists
-        if (rides[rideId]) {
-          rides[rideId].status = "accepted";
-          rides[rideId].driverId = driverId;
-          rides[rideId].driverName = driverName;
-        }
-
-        // SEND NOTIFICATION TO USER (if user has FCM token)
-        try {
-          const User = require('./models/User');
-          const user = await User.findById(ride.user);
-          
-          if (user && user.fcmToken) {
-            // You can implement sendNotificationToUser here
-            console.log(`📢 Ride accepted notification would be sent to user: ${user._id}`);
-          }
-        } catch (notificationError) {
-          console.error("❌ Error sending ride accepted notification:", notificationError);
-        }
-
-        const driverData = {
-          success: true,
-          rideId: ride.RAID_ID,
-          driverId: driverId,
-          driverName: driverName,
-          driverMobile: ride.driverMobile,
-          driverLat: driver?.location?.coordinates?.[1] || 0,
-          driverLng: driver?.location?.coordinates?.[0] || 0,
-          otp: ride.otp,
-          pickup: ride.pickup,
-          drop: ride.drop,
-          status: ride.status,
-          vehicleType: driver?.vehicleType || "taxi",
-          userName: ride.name,
-          userMobile: rides[rideId]?.userMobile || ride.userMobile || "N/A",
-          timestamp: new Date().toISOString(),
-          fare: ride.fare || ride.price || 0,
-          distance: ride.distance || "0 km"
-        };
-
-        // SEND CONFIRMATION TO DRIVER
-        if (typeof callback === "function") {
-          console.log("📨 Sending callback to driver");
-          callback(driverData);
-        }
-
-        // NOTIFY USER WITH MULTIPLE CHANNELS
-        const userRoom = ride.user.toString();
-        console.log(`📡 Notifying user room: ${userRoom}`);
-       
-        // Method 1: Standard room emission
-        io.to(userRoom).emit("rideAccepted", driverData);
-        console.log("✅ Notification sent via standard room channel");
-        
-        // Method 2: Direct to all sockets in room
-        const userSockets = await io.in(userRoom).fetchSockets();
-        console.log(`🔍 Found ${userSockets.length} sockets in user room`);
-        userSockets.forEach((userSocket, index) => {
-          userSocket.emit("rideAccepted", driverData);
-        });
-
-        // Method 3: Global emit with user filter
-        io.emit("rideAcceptedGlobal", {
-          ...driverData,
-          targetUserId: userRoom,
-          timestamp: new Date().toISOString()
-        });
-
-        // Method 4: Backup delayed emission
-        setTimeout(() => {
-          io.to(userRoom).emit("rideAccepted", driverData);
-          console.log("✅ Backup notification sent after delay");
-        }, 1000);
-
-        // Send user data to the driver who accepted the ride
-        const userDataForDriver = {
-          success: true,
-          rideId: ride.RAID_ID,
-          userId: ride.user,
-          customerId: ride.customerId,
-          userName: ride.name,
-          userMobile: rides[rideId]?.userMobile || ride.userMobile || "N/A",
-          pickup: ride.pickup,
-          drop: ride.drop,
-          otp: ride.otp,
-          status: ride.status,
-          timestamp: new Date().toISOString()
-        };
-
-        // Send to the specific driver socket
-        const driverSocket = Array.from(io.sockets.sockets.values()).find(s => s.driverId === driverId);
-        if (driverSocket) {
-          driverSocket.emit("userDataForDriver", userDataForDriver);
-          console.log("✅ User data sent to driver:", driverId);
-        } else {
-          io.to(`driver_${driverId}`).emit("userDataForDriver", userDataForDriver);
-          console.log("✅ User data sent to driver room:", driverId);
-        }
-
-        // NOTIFY OTHER DRIVERS
-        socket.broadcast.emit("rideAlreadyAccepted", {
-          rideId,
-          message: "This ride has already been accepted by another driver."
-        });
-
-        console.log("📢 Other drivers notified");
-
-        // UPDATE DRIVER STATUS IN MEMORY
-        if (activeDriverSockets.has(driverId)) {
-          const driverInfo = activeDriverSockets.get(driverId);
-          driverInfo.status = "onRide";
-          driverInfo.isOnline = true;
-          activeDriverSockets.set(driverId, driverInfo);
-          console.log(`🔄 Updated driver ${driverId} status to 'onRide'`);
-        }
-
-        console.log(`🎉 RIDE ${rideId} ACCEPTED SUCCESSFULLY BY ${driverName}`);
-      } catch (error) {
-        console.error(`❌ ERROR ACCEPTING RIDE ${rideId}:`, error);
-        console.error("Stack:", error.stack);
-       
-        if (typeof callback === "function") {
-          callback({
-            success: false,
-            message: "Server error: " + error.message
-          });
-        }
-      }
+    // NOTIFY USER WITH DRIVER'S LIVE LOCATION
+    const userRoom = ride.user.toString();
+    console.log(`📡 Notifying user room: ${userRoom} with driver's LIVE location`);
+    
+    // Method 1: Standard room emission
+    io.to(userRoom).emit("rideAccepted", driverData);
+    console.log("✅ Notification sent via standard room channel");
+    
+    // Log the location data being sent
+    console.log("📍 DRIVER LOCATION DATA SENT TO USER:");
+    console.log("   Driver ID:", driverId);
+    console.log("   Live Latitude:", driverLat);
+    console.log("   Live Longitude:", driverLng);
+    console.log("   Pickup Latitude:", ride.pickup?.lat);
+    console.log("   Pickup Longitude:", ride.pickup?.lng);
+    
+    // Method 2: Direct to all sockets in room
+    const userSockets = await io.in(userRoom).fetchSockets();
+    console.log(`🔍 Found ${userSockets.length} sockets in user room`);
+    userSockets.forEach((userSocket, index) => {
+      userSocket.emit("rideAccepted", driverData);
     });
+
+    // Rest of the function remains the same...
+  } catch (error) {
+    console.error(`❌ ERROR ACCEPTING RIDE ${rideId}:`, error);
+    console.error("Stack:", error.stack);
+    
+    if (typeof callback === "function") {
+      callback({
+        success: false,
+        message: "Server error: " + error.message
+      });
+    }
+  }
+});
+
 
 
 
