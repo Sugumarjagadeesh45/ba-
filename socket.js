@@ -22,19 +22,29 @@ const userLocationTracking = new Map();
 const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
   try {
     console.log('📢 Sending ride request to drivers...');
-    console.log(`🚗 Vehicle type: ${rideData.vehicleType}`);
+    console.log(`🚗 REQUIRED Vehicle type: ${rideData.vehicleType}`);
     
-// In socket.js - sendRideRequestToAllDrivers function
-const allDrivers = await Driver.find({ 
-  status: "Live",
-  vehicleType: rideData.vehicleType, // ✅ FILTER BY EXACT VEHICLE TYPE
-  fcmToken: { $exists: true, $ne: null, $ne: '' }
-});
+    // ✅ Get drivers with EXACT vehicle type match
+    const Driver = require('./models/driver/driver');
+    const allDrivers = await Driver.find({ 
+      status: "Live",
+      vehicleType: rideData.vehicleType, // ✅ EXACT MATCH
+      fcmToken: { $exists: true, $ne: null, $ne: '' }
+    });
     
     console.log(`📊 ${rideData.vehicleType} drivers available: ${allDrivers.length}`);
-    console.log(`📱 Drivers with FCM tokens: ${allDrivers.filter(d => d.fcmToken).length}`);
-
-    if (allDrivers.length === 0) {
+    
+    // Also check activeDriverSockets for real-time filtering
+    const onlineDriversWithType = Array.from(activeDriverSockets.entries())
+      .filter(([id, driver]) => 
+        driver.isOnline && 
+        driver.vehicleType === rideData.vehicleType
+      )
+      .map(([id, driver]) => driver);
+    
+    console.log(`📱 Online ${rideData.vehicleType} drivers: ${onlineDriversWithType.length}`);
+    
+    if (allDrivers.length === 0 && onlineDriversWithType.length === 0) {
       console.log(`⚠️ No ${rideData.vehicleType} drivers available`);
       return {
         success: false,
@@ -45,14 +55,13 @@ const allDrivers = await Driver.find({
         vehicleType: rideData.vehicleType
       };
     }
-
-    // Always send socket notification as primary method
-    console.log('🔔 Sending socket notification to filtered drivers...');
+    
+    // Send socket notification to filtered drivers only
     io.emit("newRideRequest", {
       ...rideData,
       rideId: rideData.rideId,
       _id: savedRide?._id?.toString() || null,
-      vehicleType: rideData.vehicleType, // ✅ INCLUDE VEHICLE TYPE
+      vehicleType: rideData.vehicleType,
       timestamp: new Date().toISOString()
     });
 
@@ -526,37 +535,46 @@ const init = (server) => {
    
 
     
-    socket.on("registerDriver", async ({ driverId, driverName, latitude, longitude, vehicleType = "taxi" }) => {
+
+    // In socket.js - Update the registerDriver event handler
+socket.on("registerDriver", async ({ driverId, driverName, latitude, longitude, vehicleType }) => {
   try {
-    console.log(`\n📝 DRIVER REGISTRATION: ${driverName} (${driverId}) - Vehicle: ${vehicleType}`);
+    console.log(`\n📝 DRIVER REGISTRATION: ${driverName} (${driverId})`);
     
-    // Validate vehicle type against admin panel options
-    const validTypes = ["port", "taxi", "bike", "sedan", "mini"];
-    const validatedVehicleType = validTypes.includes(vehicleType) ? vehicleType : "taxi";
+    // ✅ IMPORTANT: Fetch driver's ACTUAL vehicle type from database
+    const Driver = require('./models/driver/driver');
+    const driver = await Driver.findOne({ driverId });
     
-    // Store driver connection info
+    let actualVehicleType = "taxi"; // Default fallback
+    
+    if (driver && driver.vehicleType) {
+      actualVehicleType = driver.vehicleType;
+      console.log(`✅ Found driver in DB: ${driver.name} - Vehicle: ${actualVehicleType}`);
+    } else {
+      // Use provided vehicleType as fallback
+      actualVehicleType = vehicleType || "taxi";
+      console.log(`⚠️ Driver not found in DB, using provided: ${actualVehicleType}`);
+    }
+    
+    // ✅ Validate vehicle type
+    const validTypes = ["port", "taxi", "bike", "sedan", "mini", "suv", "auto"];
+    const validatedVehicleType = validTypes.includes(actualVehicleType) 
+      ? actualVehicleType 
+      : "taxi";
+    
+    console.log(`🚗 FINAL Vehicle type for registration: ${validatedVehicleType}`);
+    
+    // Store driver connection info with CORRECT vehicle type
     activeDriverSockets.set(driverId, {
       socketId: socket.id,
       driverId,
       driverName,
       location: { latitude, longitude },
-      vehicleType: validatedVehicleType, // Store validated type
+      vehicleType: validatedVehicleType, // ✅ Use ACTUAL vehicle type
       lastUpdate: Date.now(),
       status: "Live",
       isOnline: true
     });
-    
-    // Also update in database
-    const Driver = require('./models/driver/driver');
-    await Driver.findOneAndUpdate(
-      { driverId: driverId },
-      { 
-        vehicleType: validatedVehicleType,
-        status: "Live",
-        lastUpdate: new Date()
-      },
-      { new: true }
-    );
     
     console.log(`✅ DRIVER REGISTERED: ${driverName} - Vehicle: ${validatedVehicleType}`);
     
@@ -564,6 +582,8 @@ const init = (server) => {
     console.error("❌ Error registering driver:", error);
   }
 });
+
+
 
 
 
