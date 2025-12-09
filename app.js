@@ -1167,6 +1167,151 @@ app.get('/api/test-drivers', async (req, res) => {
 });
 
 
+
+
+
+// app.js-il athigam app.post-uh add pannu
+// Add these endpoints in app.js after other route declarations
+
+// ✅ Driver OTP Request - Live Server Only
+app.post('/api/auth/request-driver-otp', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    console.log('📞 Live Server: Driver OTP request for:', phoneNumber);
+
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+
+    // Clean phone number
+    const cleanPhone = phoneNumber.replace('+91', '').replace(/\D/g, '');
+    
+    // Check if driver exists
+    const Driver = require('./models/driver/driver');
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone: cleanPhone },
+        { phoneNumber: cleanPhone }
+      ]
+    });
+
+    if (!driver) {
+      console.log(`❌ Live Server: Driver not found for phone: ${cleanPhone}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Driver not found. Please register first or contact admin.',
+        contactEmail: 'eazygo2026@gmail.com'
+      });
+    }
+
+    console.log(`✅ Live Server: Driver found: ${driver.driverId} - ${driver.name}`);
+    
+    res.json({
+      success: true,
+      driverId: driver.driverId,
+      name: driver.name,
+      phone: driver.phone,
+      vehicleType: driver.vehicleType,
+      vehicleNumber: driver.vehicleNumber,
+      wallet: driver.wallet || 0,
+      status: driver.status || 'Offline',
+      message: 'Driver verified. Proceed with Firebase OTP.'
+    });
+
+  } catch (error) {
+    console.error('❌ Live Server: Driver OTP request error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during driver verification',
+      error: error.message 
+    });
+  }
+});
+
+// ✅ Get Driver Info - Live Server Only
+app.post('/api/auth/get-driver-info', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    console.log('🔍 Live Server: Getting driver info for:', phoneNumber);
+
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+
+    // Clean phone number
+    const cleanPhone = phoneNumber.replace('+91', '').replace(/\D/g, '');
+    
+    const Driver = require('./models/driver/driver');
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone: cleanPhone },
+        { phoneNumber: cleanPhone }
+      ]
+    }).select('-passwordHash'); // Exclude password
+
+    if (!driver) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Driver not found' 
+      });
+    }
+
+    // Generate JWT token
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { 
+        id: driver._id,
+        driverId: driver.driverId,
+        role: 'driver' 
+      },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '30d' }
+    );
+
+    console.log(`✅ Live Server: Driver info retrieved: ${driver.driverId}`);
+
+    res.json({
+      success: true,
+      token: token,
+      driver: {
+        driverId: driver.driverId,
+        name: driver.name,
+        phone: driver.phone,
+        email: driver.email || '',
+        vehicleType: driver.vehicleType,
+        vehicleNumber: driver.vehicleNumber,
+        wallet: driver.wallet || 0,
+        status: driver.status || 'Offline',
+        location: driver.location || { type: 'Point', coordinates: [0, 0] },
+        fcmToken: driver.fcmToken || '',
+        profilePicture: driver.profilePicture || '',
+        licenseNumber: driver.licenseNumber || '',
+        aadharNumber: driver.aadharNumber || '',
+        dob: driver.dob || null,
+        active: driver.active || true,
+        createdAt: driver.createdAt
+      },
+      message: 'Driver authenticated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Live Server: Get driver info error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get driver info',
+      error: error.message 
+    });
+  }
+});
+
+
+
 // ✅ SIMPLE TEST ENDPOINT - Works with proxy
 app.get('/api/orders/test-connection', (req, res) => {
   console.log('🧪 Test connection endpoint hit');
