@@ -185,17 +185,68 @@ router.put('/driver/:driverId/wallet', async (req, res) => {
       });
     }
     
-    // Find driver by driverId
-    const Driver = require('../../models/driver/driver');
-    const driver = await Driver.findOne({ driverId });
-    
+// In loginDriver function - Ensure vehicleType is returned
+const loginDriver = async (req, res) => {
+  try {
+    const { driverId, password, latitude, longitude, fcmToken } = req.body;
+    console.log(`🔑 Login attempt for driver: ${driverId}`);
+
+    const driver = await Driver.findOne({ driverId: driverId });
     if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: 'Driver not found'
-      });
+      console.log(`❌ Driver not found: ${driverId}`);
+      return res.status(404).json({ msg: "Driver not found" });
     }
-    
+
+    const match = await bcrypt.compare(password, driver.passwordHash);
+    if (!match) {
+      console.log(`❌ Invalid password for driver: ${driverId}`);
+      return res.status(401).json({ msg: "Invalid password" });
+    }
+
+    // Update driver location, status, and FCM token
+    if (latitude && longitude) {
+      driver.location = {
+        type: "Point",
+        coordinates: [longitude, latitude],
+      };
+      driver.status = "Live";
+      driver.lastUpdate = new Date();
+    }
+
+    // Update FCM token if provided
+    if (fcmToken) {
+      driver.fcmToken = fcmToken;
+      console.log(`✅ Updated FCM token for driver: ${driverId}`);
+    }
+
+    await driver.save();
+    console.log(`✅ Driver ${driverId} logged in at [${latitude}, ${longitude}]`);
+
+    const token = jwt.sign(
+      { sub: driver._id, driverId: driver.driverId },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    // ✅ CRITICAL: Add vehicleType to response
+    res.json({
+      token,
+      mustChangePassword: driver.mustChangePassword,
+      driver: {
+        driverId: driver.driverId,
+        name: driver.name,
+        status: driver.status,
+        vehicleType: driver.vehicleType, // ✅ ADD THIS
+        vehicleNumber: driver.vehicleNumber, // ✅ Add this too
+        location: driver.location,
+        fcmToken: driver.fcmToken,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Error in loginDriver:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
     // Convert amount to number
     const addAmount = Number(amount);
     
