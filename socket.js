@@ -762,7 +762,7 @@ socket.on("bookRide", async (data, callback) => {
       drop: drop,
       fare: backendCalculatedPrice,
       distance: distance,
-      vehicleType: vehicleType,
+      vehicleType: data.vehicleType,
       userName: userName,
       userMobile: userMobile,
       otp: otp
