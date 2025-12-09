@@ -283,6 +283,48 @@ const loginDriver = async (req, res) => {
   }
 });
 
+
+
+
+
+// ✅ Get complete driver data by driverId
+router.get("/:driverId", authMiddleware, async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    
+    console.log(`🔍 Fetching driver data for: ${driverId}`);
+    
+    const driver = await Driver.findOne({ driverId })
+      .select('-passwordHash -__v')
+      .lean();
+    
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+    
+    console.log(`✅ Driver found: ${driver.name}, Vehicle: ${driver.vehicleType}`);
+    
+    res.json({
+      success: true,
+      ...driver
+    });
+    
+  } catch (error) {
+    console.error("❌ Error fetching driver:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver data",
+      error: error.message
+    });
+  }
+});
+
+
+
+
 router.get("/nearby", async (req, res) => {
   try {
     const { latitude, longitude, maxDistance = 5000 } = req.query;
