@@ -406,14 +406,11 @@ const loginDriver = async (req, res) => {
 
 
 
-
-
-// ✅ Get complete driver data by driverId
+// In driverRoutes.js - GET single driver
 router.get("/:driverId", authMiddleware, async (req, res) => {
   try {
     const { driverId } = req.params;
-    
-    console.log(`🔍 Fetching driver data for: ${driverId}`);
+    console.log(`🔍 Fetching driver ${driverId}`);
     
     const driver = await Driver.findOne({ driverId })
       .select('-passwordHash -__v')
@@ -426,7 +423,9 @@ router.get("/:driverId", authMiddleware, async (req, res) => {
       });
     }
     
-    console.log(`✅ Driver found: ${driver.name}, Vehicle: ${driver.vehicleType}`);
+    console.log(`✅ Driver found: ${driver.name}`);
+    console.log(`   Vehicle Type: ${driver.vehicleType}`);
+    console.log(`   Vehicle Number: ${driver.vehicleNumber}`);
     
     res.json({
       success: true,
