@@ -1311,7 +1311,6 @@ app.post('/api/auth/get-driver-info', async (req, res) => {
 });
 
 
-
 // ✅ SIMPLE TEST ENDPOINT - Works with proxy
 app.get('/api/orders/test-connection', (req, res) => {
   console.log('🧪 Test connection endpoint hit');
