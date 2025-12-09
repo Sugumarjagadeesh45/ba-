@@ -404,7 +404,59 @@ const loginDriver = async (req, res) => {
   }
 });
 
+// Add to /Users/webasebrandings/Downloads/u&d/exrabackend-main/routes/driverRoutes.js
 
+// ✅ GET DRIVER BY ID - FIXED ENDPOINT
+router.get('/get-by-id/:driverId', authMiddleware, async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    console.log(`🔍 Fetching driver by ID: ${driverId}`);
+    
+    const driver = await Driver.findOne({ driverId: driverId })
+      .select('-passwordHash -__v')
+      .lean();
+    
+    if (!driver) {
+      console.log(`❌ Driver not found: ${driverId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+    
+    console.log(`✅ Driver found: ${driver.name} (${driver.vehicleType})`);
+    
+    res.json({
+      success: true,
+      driverId: driver.driverId,
+      name: driver.name,
+      phone: driver.phone,
+      email: driver.email || '',
+      vehicleType: driver.vehicleType,
+      vehicleNumber: driver.vehicleNumber || '',
+      wallet: driver.wallet || 0,
+      status: driver.status || 'Offline',
+      licenseNumber: driver.licenseNumber || '',
+      aadharNumber: driver.aadharNumber || '',
+      location: driver.location || { type: 'Point', coordinates: [0, 0] },
+      fcmToken: driver.fcmToken || '',
+      platform: driver.platform || 'android',
+      totalRides: driver.totalRides || 0,
+      rating: driver.rating || 0,
+      earnings: driver.earnings || 0,
+      createdAt: driver.createdAt,
+      lastUpdate: driver.lastUpdate
+    });
+    
+  } catch (error) {
+    console.error("❌ Error fetching driver:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver data",
+      error: error.message
+    });
+  }
+});
 
 // In driverRoutes.js - GET single driver
 router.get("/:driverId", authMiddleware, async (req, res) => {
