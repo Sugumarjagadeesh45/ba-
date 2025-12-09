@@ -12,75 +12,40 @@ class NotificationService {
   
  
 
-  static async sendRideRequestToAllDrivers(rideData, savedRide) {
+  
+  // In /services/notificationService.js
+static async sendRideRequestToAllDrivers(rideData, savedRide) {
   try {
-    console.log('\n🔔 ===== FCM NOTIFICATION PROCESS START =====');
-    console.log('🚖 Ride Details for Notification:');
-    console.log('   🚗 Vehicle Type:', rideData.vehicleType); // Log vehicle type
+    console.log('🚗 Vehicle type for filtering:', rideData.vehicleType);
     
-    console.log('\n🔍 FINDING ONLINE DRIVERS WITH FCM TOKENS...');
-
-    // CRITICAL FIX: Filter by vehicle type AND online status
+    // Get drivers with matching vehicle type
     const allDrivers = await Driver.find({
       $and: [
         {
           $or: [
             { status: "Live" },
-            { status: "online" }, 
-            { status: "available" },
-            { isOnline: true },
-            { lastUpdate: { $gte: new Date(Date.now() - 10 * 60 * 1000) } }
+            { status: "online" },
+            { isOnline: true }
           ]
         },
-        {
-          vehicleType: rideData.vehicleType // ADD THIS: Filter by requested vehicle type
-        }
+        { vehicleType: rideData.vehicleType } // Exact match
       ],
-      fcmToken: { 
-        $exists: true, 
-        $ne: null, 
-        $ne: '',
-        $type: 'string'
-      }
+      fcmToken: { $exists: true, $ne: null }
     });
 
-    console.log(`📊 DATABASE QUERY RESULTS:`);
-    console.log(`   ✅ Total drivers found: ${allDrivers.length}`);
-    console.log(`   🚗 Filtered by vehicle type [${rideData.vehicleType}]: ${allDrivers.filter(d => d.fcmToken).length}`);
-    console.log(`   📱 Drivers with FCM tokens: ${allDrivers.filter(d => d.fcmToken).length}`);
-
-    if (allDrivers.length === 0) {
-      console.log(`❌ NO ${rideData.vehicleType.toUpperCase()} DRIVERS WITH FCM TOKENS FOUND`);
-      return {
-        success: false,
-        message: `No ${rideData.vehicleType} drivers with FCM tokens available`,
-        sentCount: 0,
-        totalDrivers: 0,
-        fcmSent: false
-      };
-    }
-
-    // Log each driver found with their vehicle type
-    console.log('\n👥 DRIVERS FOUND FOR NOTIFICATION (FILTERED BY VEHICLE TYPE):');
-    allDrivers.forEach((driver, index) => {
-      console.log(`   ${index + 1}. ${driver.name} (${driver.driverId})`);
-      console.log(`      🚗 Vehicle: ${driver.vehicleType} (Matches: ${driver.vehicleType === rideData.vehicleType ? '✅' : '❌'})`);
-      console.log(`      📱 Token: ${driver.fcmToken ? driver.fcmToken.substring(0, 20) + '...' : 'NO TOKEN'}`);
-      console.log(`      📍 Status: ${driver.status}`);
+    console.log(`📊 Drivers found for ${rideData.vehicleType}: ${allDrivers.length}`);
+    
+    // Log each driver's vehicle type
+    allDrivers.forEach(driver => {
+      console.log(`   ${driver.name} - Vehicle: ${driver.vehicleType} (Match: ${driver.vehicleType === rideData.vehicleType ? '✅' : '❌'})`);
     });
-
-    // ... rest of the function remains the same ...
+    
+    // Rest of the function...
   } catch (error) {
-    console.error('❌ ERROR IN FCM NOTIFICATION SYSTEM:', error);
-    console.error('❌ Stack Trace:', error.stack);
-    return {
-      success: false,
-      error: error.message,
-      fcmSent: false,
-      fcmMessage: `FCM error: ${error.message}`
-    };
+    console.error('❌ Error:', error);
   }
 }
+
 
 
 
