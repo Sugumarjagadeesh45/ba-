@@ -554,63 +554,48 @@ const init = (server) => {
       console.log(`👤 USER REGISTERED SUCCESSFULLY: ${userId}`);
     });
    
-    // DRIVER REGISTRATION
+
+    
     socket.on("registerDriver", async ({ driverId, driverName, latitude, longitude, vehicleType = "taxi" }) => {
-      try {
-        console.log(`\n📝 DRIVER REGISTRATION: ${driverName} (${driverId})`);
-       
-        if (!driverId) {
-          console.log("❌ Registration failed: No driverId provided");
-          return;
-        }
-       
-        if (!latitude || !longitude) {
-          console.log("❌ Registration failed: Invalid location");
-          return;
-        }
-        
-        socket.driverId = driverId;
-        socket.driverName = driverName;
-       
-        // Store driver connection info
-        activeDriverSockets.set(driverId, {
-          socketId: socket.id,
-          driverId,
-          driverName,
-          location: { latitude, longitude },
-          vehicleType,
-          lastUpdate: Date.now(),
-          status: "Live",
-          isOnline: true
-        });
-       
-        // Join driver to rooms
-        socket.join("allDrivers");
-        socket.join(`driver_${driverId}`);
-       
-        console.log(`✅ DRIVER REGISTERED SUCCESSFULLY: ${driverName} (${driverId})`);
-       
-        // Save initial location to database
-        await saveDriverLocationToDB(driverId, driverName, latitude, longitude, vehicleType);
-       
-        // Broadcast updated driver list to ALL connected users
-        broadcastDriverLocationsToAllUsers();
-       
-        // Send confirmation to driver
-        socket.emit("driverRegistrationConfirmed", {
-          success: true,
-          message: "Driver registered successfully"
-        });
-       
-      } catch (error) {
-        console.error("❌ Error registering driver:", error);
-       
-        socket.emit("driverRegistrationConfirmed", {
-          success: false,
-          message: "Registration failed: " + error.message
-        });
-      }
+  try {
+    console.log(`\n📝 DRIVER REGISTRATION: ${driverName} (${driverId}) - Vehicle: ${vehicleType}`);
+    
+    // Validate vehicle type against admin panel options
+    const validTypes = ["port", "taxi", "bike", "sedan", "mini"];
+    const validatedVehicleType = validTypes.includes(vehicleType) ? vehicleType : "taxi";
+    
+    // Store driver connection info
+    activeDriverSockets.set(driverId, {
+      socketId: socket.id,
+      driverId,
+      driverName,
+      location: { latitude, longitude },
+      vehicleType: validatedVehicleType, // Store validated type
+      lastUpdate: Date.now(),
+      status: "Live",
+      isOnline: true
     });
+    
+    // Also update in database
+    const Driver = require('./models/driver/driver');
+    await Driver.findOneAndUpdate(
+      { driverId: driverId },
+      { 
+        vehicleType: validatedVehicleType,
+        status: "Live",
+        lastUpdate: new Date()
+      },
+      { new: true }
+    );
+    
+    console.log(`✅ DRIVER REGISTERED: ${driverName} - Vehicle: ${validatedVehicleType}`);
+    
+  } catch (error) {
+    console.error("❌ Error registering driver:", error);
+  }
+});
+
+
 
     // REQUEST NEARBY DRIVERS
     socket.on("requestNearbyDrivers", ({ latitude, longitude, radius = 5000 }) => {
