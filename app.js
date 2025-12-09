@@ -2686,6 +2686,73 @@ app.get('/api/orders/customer-id/:customerId', async (req, res) => {
   }
 });
 
+
+
+
+// Add to app.js
+app.post('/api/create-missing-driver', async (req, res) => {
+  try {
+    const { driverId, name, phone, vehicleType, vehicleNumber } = req.body;
+    
+    if (!driverId || !name || !phone || !vehicleType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+    
+    const Driver = require('./models/driver/driver');
+    const bcrypt = require('bcryptjs');
+    
+    // Check if exists
+    const existing = await Driver.findOne({ driverId });
+    if (existing) {
+      return res.json({
+        success: true,
+        message: 'Driver already exists',
+        driver: existing
+      });
+    }
+    
+    // Create driver
+    const passwordHash = await bcrypt.hash(phone, 12);
+    
+    const driver = new Driver({
+      driverId,
+      name,
+      phone,
+      passwordHash,
+      vehicleType,
+      vehicleNumber: vehicleNumber || 'N/A',
+      status: 'Offline',
+      location: {
+        type: 'Point',
+        coordinates: [0, 0]
+      }
+    });
+    
+    await driver.save();
+    
+    console.log(`✅ Created driver: ${driverId} - ${name} (${vehicleType})`);
+    
+    res.json({
+      success: true,
+      message: 'Driver created successfully',
+      driver: {
+        driverId: driver.driverId,
+        name: driver.name,
+        vehicleType: driver.vehicleType
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Create driver error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+
 // ✅ DIRECT ORDER CREATION
 app.post('/api/orders/create-direct', async (req, res) => {
   console.log('🛒 DIRECT ORDER CREATION ENDPOINT HIT');
