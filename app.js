@@ -1211,6 +1211,8 @@ app.post('/api/drivers/update-status', async (req, res) => {
     });
   }
 });
+
+
 // In app.js or driverRoutes.js
 app.get('/api/test-drivers', async (req, res) => {
   try {
