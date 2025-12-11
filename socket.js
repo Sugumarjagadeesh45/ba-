@@ -536,41 +536,36 @@ const init = (server) => {
 
     
 
-    // In socket.js - Update the registerDriver event handler
-socket.on("registerDriver", async ({ driverId, driverName, latitude, longitude, vehicleType }) => {
+    socket.on("registerDriver", async ({ driverId, driverName, latitude, longitude }) => {
   try {
     console.log(`\n📝 DRIVER REGISTRATION: ${driverName} (${driverId})`);
     
-    // ✅ IMPORTANT: Fetch driver's ACTUAL vehicle type from database
+    // ✅ ALWAYS fetch from database
     const Driver = require('./models/driver/driver');
     const driver = await Driver.findOne({ driverId });
     
-    let actualVehicleType = "taxi"; // Default fallback
-    
-    if (driver && driver.vehicleType) {
-      actualVehicleType = driver.vehicleType;
-      console.log(`✅ Found driver in DB: ${driver.name} - Vehicle: ${actualVehicleType}`);
-    } else {
-      // Use provided vehicleType as fallback
-      actualVehicleType = vehicleType || "taxi";
-      console.log(`⚠️ Driver not found in DB, using provided: ${actualVehicleType}`);
+    if (!driver) {
+      console.error(`❌ Driver ${driverId} not found in database`);
+      return;
     }
     
-    // ✅ Validate vehicle type
+    if (!driver.vehicleType) {
+      console.error(`❌ Driver ${driverId} has no vehicleType in database`);
+      return;
+    }
+    
     const validTypes = ["port", "taxi", "bike", "sedan", "mini", "suv", "auto"];
-    const validatedVehicleType = validTypes.includes(actualVehicleType) 
-      ? actualVehicleType 
+    const validatedVehicleType = validTypes.includes(driver.vehicleType) 
+      ? driver.vehicleType 
       : "taxi";
     
-    console.log(`🚗 FINAL Vehicle type for registration: ${validatedVehicleType}`);
-    
-    // Store driver connection info with CORRECT vehicle type
+    // Store with correct vehicle type
     activeDriverSockets.set(driverId, {
       socketId: socket.id,
       driverId,
       driverName,
       location: { latitude, longitude },
-      vehicleType: validatedVehicleType, // ✅ Use ACTUAL vehicle type
+      vehicleType: validatedVehicleType, // ✅ From database
       lastUpdate: Date.now(),
       status: "Live",
       isOnline: true

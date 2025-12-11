@@ -1632,7 +1632,6 @@
 
 
 
-
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -1696,7 +1695,170 @@ console.log("📂 Static files served from /uploads");
 // ✅ FIXED DRIVER NOTIFICATION BASED ON VEHICLE TYPE
 // This is the CRITICAL FIX - Always filter drivers by vehicle type when sending ride notifications
 
-// ✅ ENHANCED RIDE BOOKING ENDPOINT WITH VEHICLE TYPE FILTERING
+// ✅ ADD THESE CRITICAL ADMIN ENDPOINTS - PUT THIS AT THE TOP AFTER CORS
+console.log("🔧 Setting up admin endpoints...");
+
+// ✅ ADD THESE DIRECT ADMIN ENDPOINTS BEFORE OTHER ROUTES
+app.get('/api/admin/drivers', async (req, res) => {
+  try {
+    console.log('🚗 DIRECT ADMIN: Fetching all drivers');
+    
+    // Get auth token
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ 
+        success: false, 
+        error: "No token provided" 
+      });
+    }
+    
+    const token = authHeader.split(" ")[1];
+    try {
+      jwt.verify(token, process.env.JWT_SECRET || "secret");
+    } catch (err) {
+      return res.status(401).json({ 
+        success: false, 
+        error: "Invalid token" 
+      });
+    }
+    
+    const Driver = require('./models/driver/driver');
+    const drivers = await Driver.find({})
+      .select('-passwordHash -__v')
+      .sort({ createdAt: -1 });
+    
+    console.log(`✅ DIRECT ADMIN: Found ${drivers.length} drivers`);
+    
+    res.json({
+      success: true,
+      data: drivers,
+      message: `Found ${drivers.length} drivers`
+    });
+    
+  } catch (error) {
+    console.error('❌ DIRECT ADMIN drivers endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch drivers',
+      details: error.message
+    });
+  }
+});
+
+// ✅ Direct driver wallet update endpoint
+app.put('/api/admin/direct-wallet/:driverId', async (req, res) => {
+  try {
+    console.log(`💰 DIRECT WALLET: Updating wallet for driver: ${req.params.driverId}, amount: ${req.body.amount}`);
+    
+    const { driverId } = req.params;
+    const { amount } = req.body;
+    
+    if (!amount || isNaN(amount) || amount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid positive amount is required'
+      });
+    }
+    
+    const Driver = require('./models/driver/driver');
+    const addAmount = Number(amount);
+    
+    // Find driver by driverId
+    const driver = await Driver.findOne({ driverId });
+    
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+    
+    // Update wallet
+    const currentWallet = driver.wallet || 0;
+    const newWallet = currentWallet + addAmount;
+    
+    driver.wallet = newWallet;
+    driver.lastUpdate = new Date();
+    await driver.save();
+    
+    console.log(`✅ DIRECT WALLET: Updated ${driverId} from ${currentWallet} to ${newWallet}`);
+    
+    res.json({
+      success: true,
+      message: 'Wallet updated successfully',
+      data: {
+        driverId: driver.driverId,
+        name: driver.name,
+        addedAmount: addAmount,
+        previousWallet: currentWallet,
+        wallet: newWallet,
+        updatedAt: new Date()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ DIRECT wallet error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update wallet',
+      error: error.message
+    });
+  }
+});
+
+// ✅ Direct toggle driver status endpoint
+app.put('/api/admin/driver/:id/toggle', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔄 DIRECT TOGGLE: Toggling driver status for: ${id}`);
+    
+    const Driver = require('./models/driver/driver');
+    
+    // Try to find by driverId first
+    let driver = await Driver.findOne({ driverId: id });
+    
+    // If not found by driverId, try by _id
+    if (!driver) {
+      if (id.match(/^[0-9a-fA-F]{24}$/)) {
+        driver = await Driver.findById(id);
+      }
+    }
+    
+    if (!driver) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Driver not found' 
+      });
+    }
+
+    driver.status = driver.status === 'Live' ? 'Offline' : 'Live';
+    await driver.save();
+
+    console.log(`✅ DIRECT TOGGLE: Driver ${driver.driverId} status updated to ${driver.status}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Driver status updated to ${driver.status}`,
+      data: {
+        driverId: driver.driverId,
+        name: driver.name,
+        status: driver.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ DIRECT toggle error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update status',
+      details: error.message 
+    });
+  }
+});
+
+// ✅ ADMIN ORDER ROUTES
+console.log("📦 Loading order routes...");
+
+// ✅ FIXED ENHANCED RIDE BOOKING ENDPOINT WITH VEHICLE TYPE FILTERING
 app.post('/api/rides/book-ride-enhanced', async (req, res) => {
   try {
     const {
@@ -1877,14 +2039,19 @@ app.post('/api/rides/book-ride-enhanced', async (req, res) => {
     // Emit socket event to matching drivers only
     const io = req.app.get('io');
     if (io) {
-      // Emit to all sockets (broadcast)
-      io.emit('newRideAvailable', {
-        ...rideData,
-        targetVehicleType: vehicleType,
-        driverCount: matchingDrivers.length
+      // ✅ CRITICAL FIX: Send ONLY to matching drivers, not all drivers
+      matchingDrivers.forEach(driver => {
+        if (driver.driverId) {
+          // Emit to individual driver rooms
+          io.to(`driver_${driver.driverId}`).emit('newRideAvailable', {
+            ...rideData,
+            targetVehicleType: vehicleType,
+            driverCount: matchingDrivers.length
+          });
+        }
       });
       
-      console.log(`📡 Socket event emitted for ${vehicleType} ride to ${matchingDrivers.length} drivers`);
+      console.log(`📡 Socket event emitted for ${vehicleType} ride to ${matchingDrivers.length} drivers ONLY`);
     }
 
     res.json({
@@ -2059,14 +2226,19 @@ app.post('/api/rides/book-ride-strict', async (req, res) => {
       console.log(`⚠️ No FCM tokens found for ${vehicleType} drivers`);
     }
 
-    // Socket.io broadcast to matching drivers
+    // ✅ FIXED: Socket.io broadcast to matching drivers ONLY
     const io = req.app.get('io');
     if (io) {
-      io.emit('newRideRequest', {
-        ...rideNotification,
-        targetAudience: vehicleType,
-        driverCount: matchingDrivers.length
+      // Send to each matching driver individually
+      matchingDrivers.forEach(driver => {
+        io.to(`driver_${driver.driverId}`).emit('newRideRequest', {
+          ...rideNotification,
+          targetAudience: vehicleType,
+          driverCount: matchingDrivers.length
+        });
       });
+      
+      console.log(`📡 Socket notifications sent to ${matchingDrivers.length} ${vehicleType} drivers ONLY`);
     }
 
     res.json({
@@ -2829,6 +3001,7 @@ app.get("/", (req, res) => {
     features: {
       rideBooking: "Vehicle Type Filtering ENABLED",
       endpoints: {
+        adminDrivers: "/api/admin/drivers",
         rideBooking: {
           strict: "/api/rides/book-ride-strict",
           enhanced: "/api/rides/book-ride-enhanced"
