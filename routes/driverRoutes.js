@@ -612,6 +612,63 @@ router.delete("/:driverId", (req, res) => {
   driverController.deleteDriver(req, res);
 });
 
+
+// In your backend (add to driverRoutes.js)
+router.get('/pending-rides/:driverId', async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    
+    console.log(`🔍 Checking pending rides for driver: ${driverId}`);
+    
+    const Ride = require('../models/ride');
+    
+    // Find rides that are pending and match driver's vehicle type
+    const pendingRides = await Ride.find({
+      status: 'pending',
+      vehicleType: req.query.vehicleType || 'taxi' // Pass driver's vehicle type
+    })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .lean();
+    
+    console.log(`✅ Found ${pendingRides.length} pending rides`);
+    
+    res.json({
+      success: true,
+      pendingRides: pendingRides.map(ride => ({
+        rideId: ride.RAID_ID,
+        pickup: {
+          lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat,
+          lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng,
+          address: ride.pickupLocation || ride.pickup?.addr
+        },
+        drop: {
+          lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat,
+          lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng,
+          address: ride.dropoffLocation || ride.drop?.addr
+        },
+        fare: ride.fare || ride.price,
+        distance: ride.distance,
+        vehicleType: ride.rideType || ride.vehicleType,
+        userName: ride.name,
+        userMobile: ride.userMobile,
+        otp: ride.otp
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching pending rides:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending rides',
+      error: error.message
+    });
+  }
+});
+
+
+
+
 router.post("/logout", (req, res) => {
   driverController.logoutDriver(req, res);
 });

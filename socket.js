@@ -56,6 +56,8 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
       };
     }
     
+
+    
     // Send socket notification to filtered drivers only
     io.emit("newRideRequest", {
       ...rideData,
