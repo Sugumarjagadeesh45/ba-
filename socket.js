@@ -2545,17 +2545,20 @@ const init = (server) => {
         const dropLat = drop?.lat || drop?.latitude || 0;
         const dropLng = drop?.lng || drop?.longitude || 0;
 
-        // FIXED: Get user mobile from Registration model
-        const Registration = require('./models/user/Registration');
-        const user = await Registration.findById(userId);
-        const userPhoneNumber = user?.phoneNumber || userMobile || "Contact Admin";
+// In bookRide handler, after getting user data:
+const Registration = require('./models/user/Registration');
+const user = await Registration.findById(userId);
+const userPhoneNumber = user?.phoneNumber || userMobile || "Contact Admin";
 
-        const rideData = {
-          user: userId,
-          customerId: customerId,
-          name: userName,
-          userMobile: userPhoneNumber, // ✅ Store actual user mobile number
-          userPhone: userPhoneNumber, // ✅ Also store in userPhone field
+console.log(`📱 User's actual phone from Registration: ${userPhoneNumber}`);
+
+const rideData = {
+  user: userId,
+  customerId: customerId,
+  name: userName,
+  userMobile: userPhoneNumber, // ✅ Store actual user mobile number
+  userPhone: userPhoneNumber, // ✅ Also store in userPhone field
+
           RAID_ID: rideId,
           pickupLocation: pickup.address || "Selected Location",
           dropoffLocation: drop.address || "Selected Location",
@@ -2729,180 +2732,210 @@ const init = (server) => {
       }
     });
 
-    // ✅ FIXED ACCEPT RIDE HANDLER - NOW INCLUDES USER MOBILE
+
     socket.on("acceptRide", async (data, callback) => {
-      console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
-      console.log("📥 Acceptance Data:", { rideId: data.rideId, driverId: data.driverId });
+  console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
+  console.log("📥 Acceptance Data:", { rideId: data.rideId, driverId: data.driverId });
 
-      try {
-        console.log(`🔍 Looking for ride: ${data.rideId}`);
-        const ride = await Ride.findOne({ RAID_ID: data.rideId });
+  try {
+    console.log(`🔍 Looking for ride: ${data.rideId}`);
+    
+    // ✅ FIX: Populate user data to get mobile number
+    const ride = await Ride.findOne({ RAID_ID: data.rideId })
+      .populate('user', 'phoneNumber mobile name'); // Populate user details
 
-        if (!ride) {
-          console.error(`❌ Ride ${data.rideId} not found in database`);
-          if (typeof callback === "function") {
-            callback({ success: false, message: "Ride not found" });
-          }
-          return;
-        }
-
-        console.log(`✅ Found ride: ${ride.RAID_ID}, Status: ${ride.status}`);
-
-        if (ride.status !== 'pending') {
-          console.log(`❌ Ride ${data.rideId} is already ${ride.status}`);
-          
-          if (typeof callback === "function") {
-            callback({ 
-              success: false, 
-              message: `Ride already ${ride.status}`,
-              currentStatus: ride.status
-            });
-          }
-          return;
-        }
-
-        let driverCurrentLocation = null;
-        if (activeDriverSockets.has(data.driverId)) {
-          const driverData = activeDriverSockets.get(data.driverId);
-          driverCurrentLocation = {
-            latitude: driverData.location.latitude,
-            longitude: driverData.location.longitude
-          };
-          console.log(`📍 Driver ${data.driverId} ACTUAL location:`, driverCurrentLocation);
-        } else {
-          const driver = await Driver.findOne({ driverId: data.driverId });
-          if (driver && driver.location && driver.location.coordinates) {
-            driverCurrentLocation = {
-              latitude: driver.location.coordinates[1],
-              longitude: driver.location.coordinates[0]
-            };
-            console.log(`📍 Driver ${data.driverId} DB location:`, driverCurrentLocation);
-          }
-        }
-
-        if (!driverCurrentLocation) {
-          console.error(`❌ Could not get driver ${data.driverId} location`);
-          if (typeof callback === "function") {
-            callback({ success: false, message: "Could not get driver location" });
-          }
-          return;
-        }
-
-        // Get driver's actual mobile from database
-        const driver = await Driver.findOne({ driverId: data.driverId });
-        const driverMobile = driver?.phone || driver?.phoneNumber || "N/A";
-
-        const updatedRide = await Ride.findOneAndUpdate(
-          { RAID_ID: data.rideId, status: 'pending' },
-          {
-            driverId: data.driverId,
-            driverName: data.driverName || "Driver",
-            driverMobile: driverMobile, // ✅ Store driver mobile in ride
-            status: 'accepted',
-            acceptedAt: new Date(),
-            driverLocationAtAcceptance: driverCurrentLocation
-          },
-          { new: true, runValidators: true }
-        );
-
-        if (!updatedRide) {
-          console.log(`⚠️ Could not update ride ${data.rideId}`);
-          if (typeof callback === "function") {
-            callback({ 
-              success: false, 
-              message: "Ride was just accepted by another driver"
-            });
-          }
-          return;
-        }
-
-        await Driver.findOneAndUpdate(
-          { driverId: data.driverId },
-          {
-            status: 'onRide',
-            lastRideId: data.rideId,
-            lastUpdate: new Date()
-          }
-        );
-
-        console.log(`✅ Ride ${data.rideId} accepted by ${data.driverId}`);
-
-        // ✅ FIXED: Include userMobile in response
-        const rideData = {
-          success: true,
-          rideId: ride.RAID_ID,
-          driverId: data.driverId,
-          driverName: data.driverName || "Driver",
-          driverMobile: driverMobile,
-          userMobile: ride.userMobile || ride.userPhone || "Contact Admin", // ✅ Get actual user mobile
-          driverCurrentLocation: driverCurrentLocation,
-          driverLat: driverCurrentLocation.latitude,
-          driverLng: driverCurrentLocation.longitude,
-          locationType: 'driver_current_location',
-          pickup: {
-            addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
-            lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
-            lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
-          },
-          drop: {
-            addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
-            lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
-            lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
-          },
-          fare: ride.fare || ride.price || 0,
-          distance: ride.distance || "0 km",
-          vehicleType: ride.rideType || ride.vehicleType || "taxi",
-          userName: ride.name || "Customer",
-          otp: ride.otp,
-          status: 'accepted',
-          timestamp: new Date().toISOString()
-        };
-
-        console.log("📤 Sending ride acceptance response:", {
-          userMobile: rideData.userMobile, // ✅ Log user mobile
-          driverLocation: rideData.driverCurrentLocation
-        });
-
-        if (typeof callback === "function") {
-          callback(rideData);
-        }
-
-        const userRoom = ride.user ? ride.user.toString() : ride.userId?.toString();
-        if (userRoom) {
-          console.log(`📡 Notifying user room: ${userRoom}`);
-          
-          io.to(userRoom).emit("rideAccepted", {
-            ...rideData,
-            message: "Driver accepted your ride!",
-            driverDetails: {
-              name: data.driverName || "Driver",
-              currentLocation: driverCurrentLocation,
-              vehicleType: ride.rideType || "taxi",
-              mobile: driverMobile // ✅ Send driver mobile to user
-            }
-          });
-        }
-
-        io.emit("rideAlreadyTaken", {
-          rideId: data.rideId,
-          takenBy: data.driverName || "Driver",
-          driverId: data.driverId,
-          timestamp: new Date().toISOString(),
-          message: "This ride has been accepted by another driver."
-        });
-
-        console.log("✅ Ride acceptance process completed with ACTUAL driver location");
-
-      } catch (error) {
-        console.error(`❌ ERROR ACCEPTING RIDE ${data.rideId}:`, error);
-        if (typeof callback === "function") {
-          callback({
-            success: false,
-            message: "Server error: " + error.message
-          });
-        }
+    if (!ride) {
+      console.error(`❌ Ride ${data.rideId} not found in database`);
+      if (typeof callback === "function") {
+        callback({ success: false, message: "Ride not found" });
       }
+      return;
+    }
+
+    console.log(`✅ Found ride: ${ride.RAID_ID}, Status: ${ride.status}`);
+    console.log(`📱 Ride userMobile from DB: ${ride.userMobile}`);
+    console.log(`👤 User object from DB:`, ride.user);
+
+    // Check ride status
+    if (ride.status !== 'pending') {
+      console.log(`❌ Ride ${data.rideId} is already ${ride.status}`);
+      
+      if (typeof callback === "function") {
+        callback({ 
+          success: false, 
+          message: `Ride already ${ride.status}`,
+          currentStatus: ride.status
+        });
+      }
+      return;
+    }
+
+    // Get driver location...
+    let driverCurrentLocation = null;
+    if (activeDriverSockets.has(data.driverId)) {
+      const driverData = activeDriverSockets.get(data.driverId);
+      driverCurrentLocation = {
+        latitude: driverData.location.latitude,
+        longitude: driverData.location.longitude
+      };
+      console.log(`📍 Driver ${data.driverId} ACTUAL location:`, driverCurrentLocation);
+    } else {
+      const driver = await Driver.findOne({ driverId: data.driverId });
+      if (driver && driver.location && driver.location.coordinates) {
+        driverCurrentLocation = {
+          latitude: driver.location.coordinates[1],
+          longitude: driver.location.coordinates[0]
+        };
+        console.log(`📍 Driver ${data.driverId} DB location:`, driverCurrentLocation);
+      }
+    }
+
+    if (!driverCurrentLocation) {
+      console.error(`❌ Could not get driver ${data.driverId} location`);
+      if (typeof callback === "function") {
+        callback({ success: false, message: "Could not get driver location" });
+      }
+      return;
+    }
+
+    // Get driver's mobile
+    const driver = await Driver.findOne({ driverId: data.driverId });
+    const driverMobile = driver?.phone || driver?.phoneNumber || "N/A";
+
+    // ✅ FIX: Get user's ACTUAL mobile number from multiple sources
+    let userMobile = "Contact Admin";
+    
+    if (ride.userMobile && ride.userMobile !== "Contact Admin" && ride.userMobile !== "N/A") {
+      userMobile = ride.userMobile;
+      console.log(`✅ Using userMobile from ride: ${userMobile}`);
+    } else if (ride.userPhone && ride.userPhone !== "Contact Admin" && ride.userPhone !== "N/A") {
+      userMobile = ride.userPhone;
+      console.log(`✅ Using userPhone from ride: ${userMobile}`);
+    } else if (ride.user && ride.user.phoneNumber) {
+      userMobile = ride.user.phoneNumber;
+      console.log(`✅ Using phoneNumber from populated user: ${userMobile}`);
+    } else if (ride.user && ride.user.mobile) {
+      userMobile = ride.user.mobile;
+      console.log(`✅ Using mobile from populated user: ${userMobile}`);
+    } else {
+      console.log(`⚠️ No valid mobile found, using: ${userMobile}`);
+    }
+
+    // Update ride
+    const updatedRide = await Ride.findOneAndUpdate(
+      { RAID_ID: data.rideId, status: 'pending' },
+      {
+        driverId: data.driverId,
+        driverName: data.driverName || "Driver",
+        driverMobile: driverMobile,
+        status: 'accepted',
+        acceptedAt: new Date(),
+        driverLocationAtAcceptance: driverCurrentLocation
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedRide) {
+      console.log(`⚠️ Could not update ride ${data.rideId}`);
+      if (typeof callback === "function") {
+        callback({ 
+          success: false, 
+          message: "Ride was just accepted by another driver"
+        });
+      }
+      return;
+    }
+
+    await Driver.findOneAndUpdate(
+      { driverId: data.driverId },
+      {
+        status: 'onRide',
+        lastRideId: data.rideId,
+        lastUpdate: new Date()
+      }
+    );
+
+    console.log(`✅ Ride ${data.rideId} accepted by ${data.driverId}`);
+    console.log(`📱 FINAL userMobile being sent: ${userMobile}`);
+
+    // ✅ FIXED: Include ACTUAL userMobile in response
+    const rideData = {
+      success: true,
+      rideId: ride.RAID_ID,
+      driverId: data.driverId,
+      driverName: data.driverName || "Driver",
+      driverMobile: driverMobile,
+      userMobile: userMobile, // ✅ ACTUAL user mobile number
+      driverCurrentLocation: driverCurrentLocation,
+      driverLat: driverCurrentLocation.latitude,
+      driverLng: driverCurrentLocation.longitude,
+      locationType: 'driver_current_location',
+      pickup: {
+        addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
+        lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
+        lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
+      },
+      drop: {
+        addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
+        lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
+        lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
+      },
+      fare: ride.fare || ride.price || 0,
+      distance: ride.distance || "0 km",
+      vehicleType: ride.rideType || ride.vehicleType || "taxi",
+      userName: ride.name || "Customer",
+      userPhone: userMobile, // ✅ Also include as userPhone
+      otp: ride.otp,
+      status: 'accepted',
+      timestamp: new Date().toISOString()
+    };
+
+    console.log("📤 Sending ride acceptance response with mobile:", userMobile);
+
+    // ✅ SEND TO DRIVER
+    if (typeof callback === "function") {
+      callback(rideData);
+    }
+
+    // ✅ NOTIFY USER WITH CORRECT DRIVER LOCATION
+    const userRoom = ride.user ? ride.user.toString() : ride.userId?.toString();
+    if (userRoom) {
+      console.log(`📡 Notifying user room: ${userRoom}`);
+      
+      io.to(userRoom).emit("rideAccepted", {
+        ...rideData,
+        message: "Driver accepted your ride!",
+        driverDetails: {
+          name: data.driverName || "Driver",
+          currentLocation: driverCurrentLocation,
+          vehicleType: ride.rideType || "taxi",
+          mobile: driverMobile
+        }
+      });
+    }
+
+    // ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
+    io.emit("rideAlreadyTaken", {
+      rideId: data.rideId,
+      takenBy: data.driverName || "Driver",
+      driverId: data.driverId,
+      timestamp: new Date().toISOString(),
+      message: "This ride has been accepted by another driver."
     });
+
+    console.log("✅ Ride acceptance process completed with ACTUAL user mobile");
+
+  } catch (error) {
+    console.error(`❌ ERROR ACCEPTING RIDE ${data.rideId}:`, error);
+    if (typeof callback === "function") {
+      callback({
+        success: false,
+        message: "Server error: " + error.message
+      });
+    }
+  }
+});
+
 
     socket.on("driverLiveLocation", async (data) => {
       try {
