@@ -1549,7 +1549,60 @@ socket.on("otpVerified", async (data) => {
 
 
 
-
+socket.on("rideCompleted", async (data) => {
+  try {
+    const { rideId, driverId, userId, distance, fare } = data;
+    
+    console.log(`🏁 Ride ${rideId} completed by driver ${driverId}`);
+    console.log(`💰 Fare: ₹${fare}, Distance: ${distance}km`);
+    
+    // Update ride in database
+    const ride = await Ride.findOne({ RAID_ID: rideId });
+    if (ride) {
+      ride.status = 'completed';
+      ride.completedAt = new Date();
+      ride.actualDistance = distance;
+      ride.actualFare = fare;
+      await ride.save();
+      
+      console.log(`✅ Ride ${rideId} marked as completed in database`);
+    }
+    
+    // Update driver status
+    const driver = await Driver.findOne({ driverId });
+    if (driver) {
+      driver.status = 'Live';
+      driver.lastUpdate = new Date();
+      await driver.save();
+    }
+    
+    // ✅ SEND BILL ALERT TO USER
+    const userRoom = userId?.toString() || ride?.user?.toString();
+    if (userRoom) {
+      io.to(userRoom).emit("billAlert", {
+        rideId: rideId,
+        distance: `${distance} km`,
+        fare: fare,
+        driverName: driver?.name || "Driver",
+        vehicleType: ride?.rideType || "bike",
+        timestamp: new Date().toISOString(),
+        message: "Ride completed! Here's your bill."
+      });
+      
+      console.log(`💰 Bill alert sent to user ${userRoom}`);
+    }
+    
+    // Notify all drivers that ride is completed
+    io.emit("rideCompletedBroadcast", {
+      rideId: rideId,
+      driverId: driverId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error("❌ Error processing ride completion:", error);
+  }
+});
     // In /Users/webasebrandings/Downloads/wsback-main/socket.js
 // Add after line where you initialize socket.io
 
