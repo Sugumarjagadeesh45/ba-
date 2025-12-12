@@ -1369,9 +1369,8 @@ socket.on("rideAcceptedBroadcast", (data) => {
     });
 
 
-    
 
-    // Add this handler in socket.js
+    // In socket.js - Update the otpVerified handler
 socket.on("otpVerified", async (data) => {
   try {
     const { rideId, driverId, userId } = data;
@@ -1384,22 +1383,22 @@ socket.on("otpVerified", async (data) => {
       ride.rideStartTime = new Date();
       await ride.save();
       
-      // ✅ Send OTP verified alert to user
+      // ✅ Send OTP verified alert to user with specific event
       const userRoom = ride.user?.toString() || userId?.toString();
       if (userRoom) {
-        io.to(userRoom).emit("otpVerified", {
+        io.to(userRoom).emit("otpVerifiedAlert", {
           rideId: rideId,
           driverId: driverId,
           status: 'started',
           timestamp: new Date().toISOString(),
           message: "OTP verified! Ride has started.",
-          showAlert: true
+          showAlert: true,
+          alertTitle: "✅ OTP Verified Successfully!",
+          alertMessage: "Your ride is now starting. Driver is on the way to your destination."
         });
         
         console.log(`✅ OTP verified alert sent to user ${userRoom}`);
       }
-      
-      console.log(`✅ Ride ${rideId} status updated to 'started'`);
     }
   } catch (error) {
     console.error("❌ Error handling OTP verification:", error);
