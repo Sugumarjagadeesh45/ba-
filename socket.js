@@ -697,48 +697,45 @@ socket.on("bookRide", async (data, callback) => {
       return;
     }
 
-    // Create a new ride document in MongoDB
-    const rideData = {
-      user: userId,
-      customerId: customerId,
-      name: userName,
-      userMobile: userMobile || "N/A",
-      RAID_ID: rideId,
-      pickupLocation: pickup.address || "Selected Location",
-      dropoffLocation: drop.address || "Selected Location",
-      pickupCoordinates: {
-        latitude: pickup.lat,
-        longitude: pickup.lng
-      },
-      dropoffCoordinates: {
-        latitude: drop.lat,
-        longitude: drop.lng
-      },
-      fare: backendCalculatedPrice,
-      rideType: vehicleType,
-      otp: otp,
-      distance: distance || "0 km",
-      travelTime: travelTime || "0 mins",
-      isReturnTrip: wantReturn || false,
-      status: "pending",
-      Raid_date: new Date(),
-      Raid_time: new Date().toLocaleTimeString('en-US', {
-        timeZone: 'Asia/Kolkata',
-        hour12: true
-      }),
-      pickup: {
-        addr: pickup.address || "Selected Location",
-        lat: pickup.lat,
-        lng: pickup.lng,
-      },
-      drop: {
-        addr: drop.address || "Selected Location",
-        lat: drop.lat,
-        lng: drop.lng,
-      },
-      price: backendCalculatedPrice,
-      distanceKm: distanceKm || 0
-    };
+
+    // In the acceptRide handler, fix this section:
+
+const rideData = {
+  success: true,
+  rideId: ride.RAID_ID,
+  driverId: driver.driverId,
+  driverName: driver.name,
+  driverMobile: driver.phone,
+  driverVehicleType: driver.vehicleType,
+  driverVehicleNumber: driver.vehicleNumber,
+  // ✅ FIX: Send ACTUAL driver location, NOT pickup location
+  driverLocation: driver.location ? {
+    latitude: driver.location.coordinates[1],
+    longitude: driver.location.coordinates[0]
+  } : {
+    latitude: 0,
+    longitude: 0
+  },
+  otp: ride.otp,
+  pickup: {
+    addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
+    lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
+    lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
+  },
+  drop: {
+    addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
+    lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
+    lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
+  },
+  fare: ride.fare || ride.price || 0,
+  distance: ride.distance || "0 km",
+  vehicleType: ride.rideType || ride.vehicleType || driver.vehicleType,
+  userName: ride.name || "Customer",
+  userMobile: ride.userMobile || "N/A", // ✅ Make sure this is passed
+  status: 'accepted',
+  timestamp: new Date().toISOString()
+};
+
 
     // Create and save the ride
     console.log('💾 SAVING RIDE TO DATABASE...');
