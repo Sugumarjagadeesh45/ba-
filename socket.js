@@ -1490,7 +1490,12 @@ socket.on("driverHeartbeat", ({ driverId, latitude, longitude }) => {
       }
     });
 
-    // DISCONNECT
+
+    
+
+
+
+        // DISCONNECT
     socket.on("disconnect", () => {
       console.log(`\n❌ Client disconnected: ${socket.id}`);
       console.log(`📱 Remaining connected clients: ${io.engine.clientsCount - 1}`);
@@ -1519,9 +1524,43 @@ socket.on("driverHeartbeat", ({ driverId, latitude, longitude }) => {
         logDriverStatus();
       }
     });
-  });
- 
+    
+    // ✅ ADD THESE HERE - INSIDE the connection handler
+    socket.on("rideAcceptedByAnotherDriver", (data) => {
+      try {
+        const { rideId, driverId, driverName } = data;
+        
+        console.log(`🚫 BROADCAST: Ride ${rideId} taken by ${driverName}`);
+        
+        // Broadcast to ALL drivers except the one who accepted
+        socket.broadcast.emit("rideAlreadyTaken", {
+          rideId: rideId,
+          takenBy: driverName,
+          timestamp: new Date().toISOString(),
+          message: "This ride has been accepted by another driver."
+        });
+        
+      } catch (error) {
+        console.error("❌ Error broadcasting ride taken:", error);
+      }
+    });
+    
+    socket.on("rideAlreadyAccepted", (data) => {
+      // This event is already defined, make sure it broadcasts
+      io.emit("rideTakenByOther", {
+        rideId: data.rideId,
+        message: "Ride accepted by another driver",
+        timestamp: new Date().toISOString()
+      });
+    });
+    
+  }); // ✅ This is the END of io.on("connection", (socket) => { ... })
 
+
+
+
+
+ 
 
 
 
@@ -1556,6 +1595,10 @@ socket.on("driverHeartbeat", ({ driverId, latitude, longitude }) => {
     }
   }, 60000);
 }
+
+
+
+
 
 // GET IO INSTANCE
 const getIO = () => {
