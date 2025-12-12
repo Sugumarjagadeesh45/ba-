@@ -1370,7 +1370,8 @@ socket.on("rideAcceptedBroadcast", (data) => {
 
 
     
-    // In socket.js - Add this handler
+
+    // Add this handler in socket.js
 socket.on("otpVerified", async (data) => {
   try {
     const { rideId, driverId, userId } = data;
@@ -1383,14 +1384,20 @@ socket.on("otpVerified", async (data) => {
       ride.rideStartTime = new Date();
       await ride.save();
       
-      // Notify user
-      io.to(ride.user.toString()).emit("rideStarted", {
-        rideId: rideId,
-        driverId: driverId,
-        status: 'started',
-        timestamp: new Date().toISOString(),
-        message: "Ride has started!"
-      });
+      // ✅ Send OTP verified alert to user
+      const userRoom = ride.user?.toString() || userId?.toString();
+      if (userRoom) {
+        io.to(userRoom).emit("otpVerified", {
+          rideId: rideId,
+          driverId: driverId,
+          status: 'started',
+          timestamp: new Date().toISOString(),
+          message: "OTP verified! Ride has started.",
+          showAlert: true
+        });
+        
+        console.log(`✅ OTP verified alert sent to user ${userRoom}`);
+      }
       
       console.log(`✅ Ride ${rideId} status updated to 'started'`);
     }
@@ -1398,6 +1405,7 @@ socket.on("otpVerified", async (data) => {
     console.error("❌ Error handling OTP verification:", error);
   }
 });
+
 
 
 
@@ -1582,6 +1590,7 @@ socket.on("otpVerified", async (data) => {
     });
 
 
+    // Update the rideCompleted handler in socket.js
 socket.on("rideCompleted", async (data) => {
   try {
     const { rideId, driverId, userId, distance, fare, actualPickup, actualDrop } = data;
@@ -1596,44 +1605,58 @@ socket.on("rideCompleted", async (data) => {
       ride.completedAt = new Date();
       ride.actualDistance = distance;
       ride.actualFare = fare;
-      ride.actualPickup = actualPickup; // Store OTP verified location
-      ride.actualDrop = actualDrop; // Store completion location
+      ride.actualPickup = actualPickup;
+      ride.actualDrop = actualDrop;
       await ride.save();
       
       console.log(`✅ Ride ${rideId} marked as completed in database`);
     }
     
-    // Update driver status back to Live
+    // Update driver status
     await Driver.findOneAndUpdate(
       { driverId: driverId },
       {
         status: 'Live',
-        lastUpdate: new Date(),
-        lastRideId: rideId
+        lastUpdate: new Date()
       }
     );
     
-    // ✅ SEND BILL ALERT TO USER WITH COMPLETE DETAILS
+    // ✅ CRITICAL: Send BILL ALERT to user (not just rideCompleted)
     const userRoom = userId?.toString() || ride?.user?.toString();
     if (userRoom) {
+      console.log(`💰 Sending BILL ALERT to user ${userRoom}`);
+      
+      // Send bill alert with complete details
       io.to(userRoom).emit("billAlert", {
+        type: "bill",
         rideId: rideId,
         distance: `${distance} km`,
         fare: fare,
         driverName: ride?.driverName || "Driver",
-        vehicleType: ride?.rideType || "taxi",
+        vehicleType: ride?.rideType || "bike",
         actualPickup: actualPickup,
         actualDrop: actualDrop,
         timestamp: new Date().toISOString(),
         message: "Ride completed! Here's your bill.",
-        showBill: true
+        showBill: true,
+        priority: "high"
       });
       
-      console.log(`💰 Bill alert sent to user ${userRoom}`);
+      // Also send rideCompleted for backward compatibility
+      io.to(userRoom).emit("rideCompleted", {
+        rideId: rideId,
+        distance: distance,
+        charge: fare,
+        driverName: ride?.driverName || "Driver",
+        vehicleType: ride?.rideType || "bike",
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`✅ Bill and completion alerts sent to user ${userRoom}`);
     }
     
-    // Notify driver that ride is completed (clear driver UI)
-    io.to(`driver_${driverId}`).emit("rideCompletedSuccess", {
+    // Notify driver
+    socket.emit("rideCompletedSuccess", {
       rideId: rideId,
       message: "Ride completed successfully",
       timestamp: new Date().toISOString()
@@ -1643,6 +1666,7 @@ socket.on("rideCompleted", async (data) => {
     console.error("❌ Error processing ride completion:", error);
   }
 });
+
 
 io.on('connection', (socket) => {
   console.log('🔌 New client connected:', socket.id);
