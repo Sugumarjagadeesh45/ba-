@@ -732,7 +732,7 @@ socket.on("bookRide", async (data, callback) => {
       user: userId,
       customerId: customerId,
       name: userName,
-      userMobile: userMobile || "N/A",
+      userMobile: userMobile ||data.driverMobile || ride.userPhone || ride.userMobile || rideData.userPhone || rideData.userMobile ||"N/A" ,
       RAID_ID: rideId,
       pickupLocation: pickup.address || "Selected Location",
       dropoffLocation: drop.address || "Selected Location",
