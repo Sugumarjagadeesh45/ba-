@@ -1745,6 +1745,45 @@ app.get('/api/admin/drivers', async (req, res) => {
   }
 });
 
+
+
+
+// In app.js - Add this debug endpoint
+app.get('/api/debug/ride/:rideId', async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    console.log(`🔍 DEBUG: Checking ride ${rideId}`);
+    
+    const Ride = require('./models/ride');
+    const ride = await Ride.findOne({ RAID_ID: rideId });
+    
+    if (!ride) {
+      return res.json({
+        exists: false,
+        message: 'Ride not found'
+      });
+    }
+    
+    res.json({
+      exists: true,
+      RAID_ID: ride.RAID_ID,
+      status: ride.status,
+      driverId: ride.driverId,
+      driverName: ride.driverName,
+      driver: ride.driver,
+      user: ride.user,
+      userId: ride.userId,
+      allFields: Object.keys(ride._doc)
+    });
+    
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
 // ✅ Direct driver wallet update endpoint
 app.put('/api/admin/direct-wallet/:driverId', async (req, res) => {
   try {
