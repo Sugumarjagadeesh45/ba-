@@ -1065,7 +1065,42 @@ const rideData = {
 
 
 
-
+socket.on("driverLiveLocation", async (data) => {
+  try {
+    const { rideId, driverId, latitude, longitude } = data;
+    
+    console.log(`📍 Driver ${driverId} live location for ride ${rideId}:`, { latitude, longitude });
+    
+    // Update driver location in database
+    await Driver.findOneAndUpdate(
+      { driverId },
+      {
+        location: {
+          type: "Point",
+          coordinates: [longitude, latitude]
+        },
+        lastUpdate: new Date()
+      }
+    );
+    
+    // Find the ride to get user ID
+    const ride = await Ride.findOne({ RAID_ID: rideId });
+    if (ride && ride.user) {
+      // Send driver location to user
+      io.to(ride.user.toString()).emit("driverLocationUpdate", {
+        rideId: rideId,
+        driverId: driverId,
+        latitude: latitude,
+        longitude: longitude,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`📍 Sent driver ${driverId} location to user ${ride.user}`);
+    }
+  } catch (error) {
+    console.error("❌ Error processing driver live location:", error);
+  }
+});
 
 
 
