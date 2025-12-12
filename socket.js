@@ -613,44 +613,58 @@ socket.on("driverLocationUpdate", async (data) => {
     });
 
   
-    // In socket.js - Replace the bookRide handler with this enhanced version
+
+    // In socket.js - Find the bookRide handler and FIX THIS LINE:
+
 socket.on("bookRide", async (data, callback) => {
   let rideId;
   try {
     console.log('\n🚨 ===== 🚖 NEW RIDE BOOKING REQUEST ===== 🚖');
     console.log('📦 USER APP DATA RECEIVED:');
-    console.log('   👤 User ID:', data.userId);
-    console.log('   📞 Customer ID:', data.customerId);
-    console.log('   🚗 Vehicle Type:', data.vehicleType);
-    console.log('   📍 Pickup:', data.pickup?.address);
-    console.log('   🎯 Drop:', data.drop?.address);
-    console.log('   💰 Estimated Fare:', data.estimatedPrice);
-    console.log('   📏 Distance:', data.distance);
-    console.log('   ⏱️ Travel Time:', data.travelTime);
-    console.log('   🔑 FCM Required:', data._fcmRequired);
+    console.log(' 👤 User ID:', data.userId);
+    console.log(' 📞 Customer ID:', data.customerId);
+    console.log(' 🚗 Vehicle Type:', data.vehicleType);
+    console.log(' 📍 Pickup:', data.pickup?.address);
+    console.log(' 🎯 Drop:', data.drop?.address);
+    console.log(' 💰 Estimated Fare:', data.estimatedPrice);
+    console.log(' 📏 Distance:', data.distance);
+    console.log(' ⏱️ Travel Time:', data.travelTime);
+    console.log(' 🔑 FCM Required:', data._fcmRequired);
 
     const { userId, customerId, userName, userMobile, pickup, drop, vehicleType, estimatedPrice, distance, travelTime, wantReturn } = data;
-    
+
+    // ✅ FIX: Check if pickup and drop exist
+    if (!pickup || !drop) {
+      console.log("❌ Missing pickup or drop location");
+      if (callback) {
+        callback({
+          success: false,
+          message: "Pickup and drop locations are required"
+        });
+      }
+      return;
+    }
+
     // Calculate price on backend using admin prices
     const distanceKm = parseFloat(distance);
     const backendCalculatedPrice = await ridePriceController.calculateRidePrice(vehicleType, distanceKm);
-   
+
     // Generate sequential RAID_ID on backend
     rideId = await generateSequentialRaidId();
-    
+
     let otp;
     if (customerId && customerId.length >= 4) {
       otp = customerId.slice(-4);
     } else {
       otp = Math.floor(1000 + Math.random() * 9000).toString();
     }
-    
+
     console.log('💰 PRICE CALCULATION:');
-    console.log('   📊 Distance (km):', distanceKm);
-    console.log('   🚗 Vehicle Type:', vehicleType);
-    console.log('   💵 Calculated Fare:', backendCalculatedPrice);
-    console.log('   🔢 Generated OTP:', otp);
-    console.log('   🆔 Generated RAID_ID:', rideId);
+    console.log(' 📊 Distance (km):', distanceKm);
+    console.log(' 🚗 Vehicle Type:', vehicleType);
+    console.log(' 💵 Calculated Fare:', backendCalculatedPrice);
+    console.log(' 🔢 Generated OTP:', otp);
+    console.log(' 🆔 Generated RAID_ID:', rideId);
 
     // Check if this ride is already being processed
     if (processingRides.has(rideId)) {
@@ -663,10 +677,10 @@ socket.on("bookRide", async (data, callback) => {
       }
       return;
     }
-   
+
     // Add to processing set
     processingRides.add(rideId);
-    
+
     // Validate required fields
     if (!userId || !customerId || !userName || !pickup || !drop) {
       console.log("❌ MISSING REQUIRED FIELDS");
@@ -697,48 +711,59 @@ socket.on("bookRide", async (data, callback) => {
       return;
     }
 
+    // ✅ FIX: Extract coordinates safely
+    const pickupLat = pickup?.lat || pickup?.latitude || 0;
+    const pickupLng = pickup?.lng || pickup?.longitude || 0;
+    const dropLat = drop?.lat || drop?.latitude || 0;
+    const dropLng = drop?.lng || drop?.longitude || 0;
 
-    // In the acceptRide handler, fix this section:
+    // Create a new ride document in MongoDB
+    const rideData = {
+      user: userId,
+      customerId: customerId,
+      name: userName,
+      userMobile: userMobile || "N/A",
+      RAID_ID: rideId,
+      pickupLocation: pickup.address || "Selected Location",
+      dropoffLocation: drop.address || "Selected Location",
+      pickupCoordinates: {
+        latitude: pickupLat,
+        longitude: pickupLng
+      },
+      dropoffCoordinates: {
+        latitude: dropLat,
+        longitude: dropLng
+      },
+      fare: backendCalculatedPrice,
+      rideType: vehicleType,
+      otp: otp,
+      distance: distance || "0 km",
+      travelTime: travelTime || "0 mins",
+      isReturnTrip: wantReturn || false,
+      status: "pending",
+      Raid_date: new Date(),
+      Raid_time: new Date().toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour12: true
+      }),
+      pickup: {
+        addr: pickup.address || "Selected Location",
+        lat: pickupLat,
+        lng: pickupLng,
+      },
+      drop: {
+        addr: drop.address || "Selected Location",
+        lat: dropLat,
+        lng: dropLng,
+      },
+      price: backendCalculatedPrice,
+      distanceKm: distanceKm || 0
+    };
 
-const rideData = {
-  success: true,
-  rideId: ride.RAID_ID,
-  driverId: driver.driverId,
-  driverName: driver.name,
-  driverMobile: driver.phone,
-  driverVehicleType: driver.vehicleType,
-  driverVehicleNumber: driver.vehicleNumber,
-  // ✅ FIX: Send ACTUAL driver location, NOT pickup location
-  driverLocation: driver.location ? {
-    latitude: driver.location.coordinates[1],
-    longitude: driver.location.coordinates[0]
-  } : {
-    latitude: 0,
-    longitude: 0
-  },
-  otp: ride.otp,
-  pickup: {
-    addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
-    lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
-    lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
-  },
-  drop: {
-    addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
-    lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
-    lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
-  },
-  fare: ride.fare || ride.price || 0,
-  distance: ride.distance || "0 km",
-  vehicleType: ride.rideType || ride.vehicleType || driver.vehicleType,
-  userName: ride.name || "Customer",
-  userMobile: ride.userMobile || "N/A", // ✅ Make sure this is passed
-  status: 'accepted',
-  timestamp: new Date().toISOString()
-};
-
+    console.log('💾 SAVING RIDE TO DATABASE...');
+    console.log('📝 Ride data to save:', rideData);
 
     // Create and save the ride
-    console.log('💾 SAVING RIDE TO DATABASE...');
     const newRide = new Ride(rideData);
     const savedRide = await newRide.save();
     console.log(`✅ RIDE SAVED TO MONGODB: ${savedRide._id}`);
@@ -750,29 +775,37 @@ const rideData = {
       status: "pending",
       timestamp: Date.now(),
       _id: savedRide._id.toString(),
-      userLocation: { latitude: pickup.lat, longitude: pickup.lng },
+      userLocation: { latitude: pickupLat, longitude: pickupLng },
       fare: backendCalculatedPrice
     };
 
     // Initialize user location tracking
     userLocationTracking.set(userId, {
-      latitude: pickup.lat,
-      longitude: pickup.lng,
+      latitude: pickupLat,
+      longitude: pickupLng,
       lastUpdate: Date.now(),
       rideId: rideId
     });
 
     // Save initial user location to database
-    await saveUserLocationToDB(userId, pickup.lat, pickup.lng, rideId);
+    await saveUserLocationToDB(userId, pickupLat, pickupLng, rideId);
 
     console.log('\n📢 ===== SENDING NOTIFICATIONS TO DRIVERS =====');
     console.log(`🎯 Target: ALL online drivers with FCM tokens`);
 
-    // ✅ CRITICAL FIX: Send FCM notifications to ALL online drivers
+    // ✅ FIX: Prepare notification data properly
     const notificationResult = await sendRideRequestToAllDrivers({
       rideId: rideId,
-      pickup: pickup,
-      drop: drop,
+      pickup: {
+        lat: pickupLat,
+        lng: pickupLng,
+        address: pickup.address || "Selected Location"
+      },
+      drop: {
+        lat: dropLat,
+        lng: dropLng,
+        address: drop.address || "Selected Location"
+      },
       fare: backendCalculatedPrice,
       distance: distance,
       vehicleType: data.vehicleType,
@@ -782,18 +815,26 @@ const rideData = {
     }, savedRide);
 
     console.log('📱 FCM NOTIFICATION RESULT:');
-    console.log('   ✅ Success Count:', notificationResult.successCount || 0);
-    console.log('   ❌ Failure Count:', notificationResult.failureCount || 0);
-    console.log('   📊 Total Drivers:', notificationResult.totalDrivers || 0);
-    console.log('   🔔 FCM Sent:', notificationResult.fcmSent ? 'YES' : 'NO');
-    console.log('   💬 Message:', notificationResult.fcmMessage);
+    console.log(' ✅ Success Count:', notificationResult.successCount || 0);
+    console.log(' ❌ Failure Count:', notificationResult.failureCount || 0);
+    console.log(' 📊 Total Drivers:', notificationResult.totalDrivers || 0);
+    console.log(' 🔔 FCM Sent:', notificationResult.fcmSent ? 'YES' : 'NO');
+    console.log(' 💬 Message:', notificationResult.fcmMessage);
 
     // Also send socket notification as backup
     console.log('🔔 SENDING SOCKET NOTIFICATION AS BACKUP...');
     io.emit("newRideRequest", {
       rideId: rideId,
-      pickup: pickup,
-      drop: drop,
+      pickup: {
+        lat: pickupLat,
+        lng: pickupLng,
+        address: pickup.address || "Selected Location"
+      },
+      drop: {
+        lat: dropLat,
+        lng: dropLng,
+        address: drop.address || "Selected Location"
+      },
       fare: backendCalculatedPrice,
       distance: distance,
       vehicleType: vehicleType,
@@ -832,7 +873,7 @@ const rideData = {
   } catch (error) {
     console.error("❌ ERROR IN RIDE BOOKING PROCESS:", error);
     console.error("❌ Stack Trace:", error.stack);
-   
+
     if (callback) {
       callback({
         success: false,
@@ -847,6 +888,7 @@ const rideData = {
     }
   }
 });
+
 
 
     // JOIN ROOM
