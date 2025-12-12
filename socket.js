@@ -23,27 +23,29 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
   try {
     console.log('📢 Sending ride request to drivers...');
     console.log(`🚗 REQUIRED Vehicle type: ${rideData.vehicleType}`);
-    
-    // ✅ Get drivers with EXACT vehicle type match
+    console.log(`📍 Pickup: ${rideData.pickup?.address || 'No address'}`);
+    console.log(`🎯 Drop: ${rideData.drop?.address || 'No address'}`);
+
+    // ✅ FIX: Get drivers with EXACT vehicle type match
     const Driver = require('./models/driver/driver');
-    const allDrivers = await Driver.find({ 
+    const allDrivers = await Driver.find({
       status: "Live",
       vehicleType: rideData.vehicleType, // ✅ EXACT MATCH
       fcmToken: { $exists: true, $ne: null, $ne: '' }
     });
-    
+
     console.log(`📊 ${rideData.vehicleType} drivers available: ${allDrivers.length}`);
-    
+
     // Also check activeDriverSockets for real-time filtering
     const onlineDriversWithType = Array.from(activeDriverSockets.entries())
-      .filter(([id, driver]) => 
-        driver.isOnline && 
+      .filter(([id, driver]) =>
+        driver.isOnline &&
         driver.vehicleType === rideData.vehicleType
       )
       .map(([id, driver]) => driver);
-    
+
     console.log(`📱 Online ${rideData.vehicleType} drivers: ${onlineDriversWithType.length}`);
-    
+
     if (allDrivers.length === 0 && onlineDriversWithType.length === 0) {
       console.log(`⚠️ No ${rideData.vehicleType} drivers available`);
       return {
@@ -55,9 +57,7 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
         vehicleType: rideData.vehicleType
       };
     }
-    
 
-    
     // Send socket notification to filtered drivers only
     io.emit("newRideRequest", {
       ...rideData,
@@ -69,10 +69,10 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
 
     // FCM notification to drivers with tokens
     const driversWithFCM = allDrivers.filter(driver => driver.fcmToken);
-    
+
     if (driversWithFCM.length > 0) {
       console.log(`🎯 Sending FCM to ${driversWithFCM.length} ${rideData.vehicleType} drivers`);
-      
+
       const notificationData = {
         type: "ride_request",
         rideId: rideData.rideId,
@@ -103,11 +103,21 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
         totalDrivers: driversWithFCM.length,
         fcmSent: fcmResult.successCount > 0,
         vehicleType: rideData.vehicleType,
-        fcmMessage: fcmResult.successCount > 0 ? 
-          `FCM sent to ${fcmResult.successCount} ${rideData.vehicleType} drivers` : 
+        fcmMessage: fcmResult.successCount > 0 ?
+          `FCM sent to ${fcmResult.successCount} ${rideData.vehicleType} drivers` :
           `FCM failed: ${fcmResult.errors?.join(', ') || 'Unknown error'}`
       };
     }
+    
+    return {
+      success: false,
+      driversNotified: 0,
+      totalDrivers: 0,
+      fcmSent: false,
+      vehicleType: rideData.vehicleType,
+      fcmMessage: `No drivers with valid FCM tokens for ${rideData.vehicleType}`
+    };
+    
   } catch (error) {
     console.error('❌ Error in notification system:', error);
     return {
