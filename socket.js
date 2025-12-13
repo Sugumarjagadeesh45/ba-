@@ -1899,35 +1899,30 @@ const activeDriverSockets = new Map();
 const processingRides = new Set();
 const userLocationTracking = new Map();
 
+
 const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
   try {
     console.log('📢 Sending ride request to drivers...');
     console.log(`🚗 REQUIRED Vehicle type: ${rideData.vehicleType}`);
-    console.log(`📍 Pickup: ${rideData.pickup?.address || 'No address'}`);
-    console.log(`🎯 Drop: ${rideData.drop?.address || 'No address'}`);
-
-    // Get drivers with EXACT vehicle type match
+    
+    // Get drivers who can accept this vehicle type
     const Driver = require('./models/driver/driver');
     const allDrivers = await Driver.find({
-      status: "Live",
-      vehicleType: rideData.vehicleType,
+      status: { $in: ["Live", "online", "available"] },
       fcmToken: { $exists: true, $ne: null, $ne: '' }
     });
 
-    console.log(`📊 ${rideData.vehicleType} drivers available: ${allDrivers.length}`);
+    console.log(`📊 Total online drivers: ${allDrivers.length}`);
 
-    // Also check activeDriverSockets for real-time filtering
-    const onlineDriversWithType = Array.from(activeDriverSockets.entries())
-      .filter(([id, driver]) =>
-        driver.isOnline &&
-        driver.vehicleType === rideData.vehicleType
-      )
-      .map(([id, driver]) => driver);
+    // Filter drivers who can accept this vehicle type
+    const compatibleDrivers = allDrivers.filter(driver => {
+      return canDriverAcceptRide(driver.vehicleType, rideData.vehicleType);
+    });
 
-    console.log(`📱 Online ${rideData.vehicleType} drivers: ${onlineDriversWithType.length}`);
+    console.log(`✅ Compatible ${rideData.vehicleType} drivers: ${compatibleDrivers.length}`);
 
-    if (allDrivers.length === 0 && onlineDriversWithType.length === 0) {
-      console.log(`⚠️ No ${rideData.vehicleType} drivers available`);
+    if (compatibleDrivers.length === 0) {
+      console.log(`⚠️ No compatible drivers available for ${rideData.vehicleType}`);
       return {
         success: false,
         message: `No ${rideData.vehicleType} drivers available`,
@@ -1938,21 +1933,22 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
       };
     }
 
-    // Send socket notification to filtered drivers only
+    // Send socket notification to compatible drivers only
     io.emit("newRideRequest", {
       ...rideData,
       rideId: rideData.rideId,
       _id: savedRide?._id?.toString() || null,
       vehicleType: rideData.vehicleType,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      compatibleDriversCount: compatibleDrivers.length
     });
 
     // FCM notification to drivers with tokens
-    const driversWithFCM = allDrivers.filter(driver => driver.fcmToken);
+    const driversWithFCM = compatibleDrivers.filter(driver => driver.fcmToken);
 
     if (driversWithFCM.length > 0) {
-      console.log(`🎯 Sending FCM to ${driversWithFCM.length} ${rideData.vehicleType} drivers`);
-
+      console.log(`🎯 Sending FCM to ${driversWithFCM.length} compatible drivers`);
+      
       const notificationData = {
         type: "ride_request",
         rideId: rideData.rideId,
@@ -1980,11 +1976,11 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
       return {
         success: fcmResult.successCount > 0,
         driversNotified: fcmResult.successCount,
-        totalDrivers: driversWithFCM.length,
+        totalDrivers: compatibleDrivers.length,
         fcmSent: fcmResult.successCount > 0,
         vehicleType: rideData.vehicleType,
         fcmMessage: fcmResult.successCount > 0 ?
-          `FCM sent to ${fcmResult.successCount} ${rideData.vehicleType} drivers` :
+          `FCM sent to ${fcmResult.successCount} compatible drivers` :
           `FCM failed: ${fcmResult.errors?.join(', ') || 'Unknown error'}`
       };
     }
@@ -1995,7 +1991,7 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
       totalDrivers: 0,
       fcmSent: false,
       vehicleType: rideData.vehicleType,
-      fcmMessage: `No drivers with valid FCM tokens for ${rideData.vehicleType}`
+      fcmMessage: `No compatible drivers with valid FCM tokens for ${rideData.vehicleType}`
     };
     
   } catch (error) {
@@ -2008,6 +2004,27 @@ const sendRideRequestToAllDrivers = async (rideData, savedRide) => {
     };
   }
 };
+
+// ✅ ADD THIS HELPER FUNCTION
+const canDriverAcceptRide = (driverVehicleType, rideVehicleType) => {
+  if (!driverVehicleType || !rideVehicleType) return false;
+  
+  const driverType = driverVehicleType.toLowerCase();
+  const rideType = rideVehicleType.toLowerCase();
+  
+  // Define compatibility matrix
+  const compatibility = {
+    'taxi': ['taxi', 'sedan', 'mini', 'suv'],
+    'sedan': ['sedan', 'taxi'],
+    'mini': ['mini', 'taxi'],
+    'suv': ['suv', 'taxi'],
+    'port': ['port'],
+    'bike': ['bike']
+  };
+  
+  return compatibility[driverType]?.includes(rideType) || false;
+};
+
 
 const broadcastPricesToAllUsers = () => {
   try {
