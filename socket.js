@@ -2858,37 +2858,40 @@ const rideData = {
     console.log(`✅ Ride ${data.rideId} accepted by ${data.driverId}`);
     console.log(`📱 FINAL userMobile being sent: ${userMobile}`);
 
-    // ✅ FIXED: Include ACTUAL userMobile in response
-    const rideData = {
-      success: true,
-      rideId: ride.RAID_ID,
-      driverId: data.driverId,
-      driverName: data.driverName || "Driver",
-      driverMobile: driverMobile,
-      userMobile: userMobile, // ✅ ACTUAL user mobile number
-      driverCurrentLocation: driverCurrentLocation,
-      driverLat: driverCurrentLocation.latitude,
-      driverLng: driverCurrentLocation.longitude,
-      locationType: 'driver_current_location',
-      pickup: {
-        addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
-        lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
-        lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
-      },
-      drop: {
-        addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
-        lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
-        lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
-      },
-      fare: ride.fare || ride.price || 0,
-      distance: ride.distance || "0 km",
-      vehicleType: ride.rideType || ride.vehicleType || "taxi",
-      userName: ride.name || "Customer",
-      userPhone: userMobile, // ✅ Also include as userPhone
-      otp: ride.otp,
-      status: 'accepted',
-      timestamp: new Date().toISOString()
-    };
+
+    
+    // In the acceptRide function, make sure to include all necessary driver data
+const rideData = {
+  success: true,
+  rideId: ride.RAID_ID,
+  driverId: data.driverId,
+  driverName: data.driverName || "Driver",
+  driverMobile: driverMobile,
+  userMobile: userMobile, // Make sure this is the actual mobile number
+  driverCurrentLocation: driverCurrentLocation,
+  driverLat: driverCurrentLocation.latitude,
+  driverLng: driverCurrentLocation.longitude,
+  locationType: 'driver_current_location',
+  pickup: {
+    addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
+    lat: ride.pickupCoordinates?.latitude || ride.pickup?.lat || 0,
+    lng: ride.pickupCoordinates?.longitude || ride.pickup?.lng || 0
+  },
+  drop: {
+    addr: ride.dropoffLocation || ride.drop?.addr || "Drop location",
+    lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
+    lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
+  },
+  fare: ride.fare || ride.price || 0,
+  distance: ride.distance || "0 km",
+  vehicleType: ride.rideType || ride.vehicleType || "taxi",
+  userName: ride.name || "Customer",
+  userPhone: userMobile, // Also include as userPhone
+  otp: ride.otp,
+  status: 'accepted',
+  timestamp: new Date().toISOString()
+};
+
 
     console.log("📤 Sending ride acceptance response with mobile:", userMobile);
 
@@ -3199,37 +3202,41 @@ if (userRoom) {
       }
     });
 
-    socket.on("otpVerified", async (data) => {
-      try {
-        const { rideId, driverId, userId } = data;
-        console.log(`✅ OTP Verified for ride ${rideId}`);
-        
-        const ride = await Ride.findOne({ RAID_ID: rideId });
-        if (ride) {
-          ride.status = 'started';
-          ride.rideStartTime = new Date();
-          await ride.save();
-          
-          const userRoom = ride.user?.toString() || userId?.toString();
-          if (userRoom) {
-            io.to(userRoom).emit("otpVerifiedAlert", {
-              rideId: rideId,
-              driverId: driverId,
-              status: 'started',
-              timestamp: new Date().toISOString(),
-              message: "OTP verified! Ride has started.",
-              showAlert: true,
-              alertTitle: "✅ OTP Verified Successfully!",
-              alertMessage: "Your ride is now starting. Driver is on the way to your destination."
-            });
-            
-            console.log(`✅ OTP verified alert sent to user ${userRoom}`);
-          }
-        }
-      } catch (error) {
-        console.error("❌ Error handling OTP verification:", error);
+    
+
+    // Update the otpVerified handler
+socket.on("otpVerified", async (data) => {
+  try {
+    const { rideId, driverId, userId } = data;
+    console.log(`✅ OTP Verified for ride ${rideId}`);
+    
+    const ride = await Ride.findOne({ RAID_ID: rideId });
+    if (ride) {
+      ride.status = 'started';
+      ride.rideStartTime = new Date();
+      await ride.save();
+      
+      const userRoom = ride.user?.toString() || userId?.toString();
+      if (userRoom) {
+        io.to(userRoom).emit("otpVerifiedAlert", {
+          rideId: rideId,
+          driverId: driverId,
+          status: 'started',
+          timestamp: new Date().toISOString(),
+          message: "OTP verified! Ride has started.",
+          showAlert: true,
+          alertTitle: "✅ OTP Verified Successfully!",
+          alertMessage: "Your ride is now starting. Driver is on the way to your destination."
+        });
       }
-    });
+    }
+  } catch (error) {
+    console.error("❌ Error handling OTP verification:", error);
+  }
+});
+
+
+
 
     socket.on("driverStartedRide", async (data) => {
       try {
@@ -3336,24 +3343,36 @@ if (userRoom) {
       }
     });
    
+
     socket.on("completeRide", async (data) => {
-      try {
-        const { rideId, driverId, distance, fare } = data;
-       
-        console.log(`\n🎉 RIDE COMPLETED: ${rideId}`);
-        console.log(`🚗 Driver: ${driverId}`);
-        console.log(`📏 Distance: ${distance} km`);
-        console.log(`💰 Fare: ₹${fare}`);
-       
-        const ride = await Ride.findOne({ RAID_ID: rideId });
-        if (ride) {
-          ride.status = "completed";
-          ride.completedAt = new Date();
-          ride.actualDistance = distance;
-          ride.actualFare = fare;
-          await ride.save();
-          console.log(`✅ Ride ${rideId} marked as completed in database`);
-        }
+  try {
+    const { rideId, driverId, userId, distance, fare, actualPickup, actualDrop } = data;
+    
+    console.log(`🏁 Ride ${rideId} completed by driver ${driverId}`);
+    console.log(`💰 Fare: ₹${fare}, Distance: ${distance}km`);
+    
+    // Calculate actual fare based on distance and admin rate
+    const Ride = require('./models/ride');
+    const ride = await Ride.findOne({ RAID_ID: rideId });
+    
+    if (ride) {
+      // Get admin rate for this vehicle type
+      const ridePriceController = require('./controllers/ridePriceController');
+      const rate = await ridePriceController.getCurrentPrice(ride.rideType);
+      const actualFare = parseFloat(distance) * rate;
+      
+      ride.status = 'completed';
+      ride.completedAt = new Date();
+      ride.actualDistance = distance;
+      ride.actualFare = actualFare;
+      ride.actualPickup = actualPickup;
+      ride.actualDrop = actualDrop;
+      await ride.save();
+      
+      console.log(`✅ Ride ${rideId} marked as completed in database with fare ₹${actualFare}`);
+    }
+
+
        
         if (rides[rideId]) {
           rides[rideId].status = "completed";
