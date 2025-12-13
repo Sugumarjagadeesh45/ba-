@@ -2900,29 +2900,32 @@ socket.on("acceptRide", async (data, callback) => {
       callback(rideData);
     }
 
-    // ✅ BROADCAST TO USER WHO BOOKED THE RIDE
-    const userRoom = ride.user?.toString() || ride.userId?.toString();
-    if (userRoom) {
-      io.to(userRoom).emit("rideAccepted", {
-        ...rideData,
-        message: "Driver accepted your ride!",
-        driverDetails: {
-          name: data.driverName || "Driver",
-          currentLocation: driverCurrentLocation,
-          vehicleType: ride.rideType || "taxi",
-          mobile: driverMobile
-        }
-      });
-    }
+// In acceptRide function in backend socket.js
 
-    // ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
-    io.emit("rideAlreadyTaken", {
-      rideId: data.rideId,
-      takenBy: data.driverName || "Driver",
-      driverId: data.driverId,
-      timestamp: new Date().toISOString(),
-      message: "This ride has been accepted by another driver."
-    });
+// ✅ BROADCAST TO USER WHO BOOKED THE RIDE
+const userRoom = ride.user?.toString() || ride.userId?.toString();
+if (userRoom) {
+  io.to(userRoom).emit("rideAccepted", {
+    ...rideData,
+    message: "Driver accepted your ride!",
+    driverDetails: {
+      name: data.driverName || "Driver",
+      currentLocation: driverCurrentLocation,
+      vehicleType: ride.rideType || "taxi",
+      mobile: driverMobile
+    }
+  });
+}
+
+// ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
+// But don't emit to the user who booked the ride
+io.emit("rideAlreadyTaken", {
+  rideId: data.rideId,
+  takenBy: data.driverName || "Driver",
+  driverId: data.driverId,
+  timestamp: new Date().toISOString(),
+  message: "This ride has been accepted by another driver."
+});
 
     console.log("✅ Ride acceptance process completed with ACTUAL user mobile");
 
