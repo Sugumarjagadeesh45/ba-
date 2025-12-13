@@ -3215,7 +3215,8 @@ socket.on("acceptRide", async (data, callback) => {
 
     
 
-    // Update the otpVerified handler
+
+    // In socket.js (backend) - Update the otpVerified handler
 socket.on("otpVerified", async (data) => {
   try {
     const { rideId, driverId, userId } = data;
@@ -3227,24 +3228,18 @@ socket.on("otpVerified", async (data) => {
       ride.rideStartTime = new Date();
       await ride.save();
       
-
-      // In acceptRide function in backend socket.js
-const userRoom = ride.user?.toString() || ride.userId?.toString();
-if (userRoom) {
-  console.log(`📡 Emitting rideAccepted to user room: ${userRoom}`);
-  io.to(userRoom).emit("rideAccepted", {
-    ...rideData,
-    message: "Driver accepted your ride!",
-    driverDetails: {
-      name: data.driverName || "Driver",
-      currentLocation: driverCurrentLocation,
-      vehicleType: ride.rideType || "taxi",
-      mobile: driverMobile
-    }
-  });
-}
-
-
+      // ✅ FIX: Emit otpVerified to user room
+      const userRoom = ride.user?.toString() || ride.userId?.toString();
+      if (userRoom) {
+        console.log(`📡 Emitting otpVerified to user room: ${userRoom}`);
+        io.to(userRoom).emit("otpVerified", {
+          rideId: rideId,
+          driverId: driverId,
+          userId: userId,
+          timestamp: new Date().toISOString(),
+          alertType: "otpVerified"
+        });
+      }
     }
   } catch (error) {
     console.error("❌ Error handling OTP verification:", error);
@@ -3253,6 +3248,55 @@ if (userRoom) {
 
 
 
+
+// In TaxiContent.tsx - Update the OTP verification handler
+useEffect(() => {
+  if (socket) {
+    socket.on("otpVerified", (data) => {
+      console.log('✅ OTP Verified by driver:', data);
+      
+      // Show professional OTP verified alert
+      Alert.alert(
+        "✅ OTP Verified Successfully!",
+        "Your ride is now starting. Driver is on the way to your destination.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              console.log("OTP verification acknowledged");
+              // Start navigation updates
+              setRealTimeNavigationActive(true);
+              setShowLocationOverlay(false);
+              
+              // Request driver location updates
+              if (acceptedDriver && socket) {
+                socket.emit('requestDriverLocation', {
+                  rideId: currentRideId,
+                  driverId: acceptedDriver.driverId,
+                  priority: 'high'
+                });
+              }
+            }
+          }
+        ],
+        { 
+          cancelable: false,
+          onDismiss: () => console.log("OTP alert dismissed")
+        }
+      );
+      
+      // Update ride status
+      setRideStatus("started");
+      setRealTimeNavigationActive(true);
+      setShowLocationOverlay(false);
+      
+      console.log('🎯 REAL-TIME NAVIGATION ACTIVATED AFTER OTP');
+    });
+  }
+  return () => {
+    if (socket) socket.off("otpVerified");
+  };
+}, [currentRideId, acceptedDriver]);
 
     socket.on("driverStartedRide", async (data) => {
       try {
