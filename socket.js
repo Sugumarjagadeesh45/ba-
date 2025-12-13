@@ -2794,7 +2794,7 @@ const rideData = {
 
 
 
-    
+
     // Update the acceptRide function in the backend
 socket.on("acceptRide", async (data, callback) => {
   console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
@@ -3218,7 +3218,8 @@ socket.on("acceptRide", async (data, callback) => {
     
 
 
-    // In socket.js (backend) - Update the otpVerified handler
+    
+    // In socket.js - Update the otpVerified handler
 socket.on("otpVerified", async (data) => {
   try {
     const { rideId, driverId, userId } = data;
@@ -3230,7 +3231,7 @@ socket.on("otpVerified", async (data) => {
       ride.rideStartTime = new Date();
       await ride.save();
       
-      // ✅ FIX: Emit otpVerified to user room
+      // Emit to both user room and ride room
       const userRoom = ride.user?.toString() || ride.userId?.toString();
       if (userRoom) {
         console.log(`📡 Emitting otpVerified to user room: ${userRoom}`);
@@ -3242,11 +3243,22 @@ socket.on("otpVerified", async (data) => {
           alertType: "otpVerified"
         });
       }
+      
+      // Also emit to ride room
+      console.log(`📡 Emitting otpVerified to ride room: ${rideId}`);
+      io.to(rideId).emit("otpVerified", {
+        rideId: rideId,
+        driverId: driverId,
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        alertType: "otpVerified"
+      });
     }
   } catch (error) {
     console.error("❌ Error handling OTP verification:", error);
   }
 });
+
 
 
 
