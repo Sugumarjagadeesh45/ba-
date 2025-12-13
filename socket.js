@@ -3263,8 +3263,6 @@ socket.on("otpVerified", async (data) => {
 
 
 
-
-
     socket.on("driverStartedRide", async (data) => {
       try {
         const { rideId, driverId, userId } = data;
