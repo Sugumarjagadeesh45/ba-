@@ -2793,6 +2793,8 @@ const rideData = {
     });
 
 
+
+    
     // Update the acceptRide function in the backend
 socket.on("acceptRide", async (data, callback) => {
   console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
