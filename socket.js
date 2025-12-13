@@ -3249,54 +3249,7 @@ socket.on("otpVerified", async (data) => {
 
 
 
-// In TaxiContent.tsx - Update the OTP verification handler
-useEffect(() => {
-  if (socket) {
-    socket.on("otpVerified", (data) => {
-      console.log('✅ OTP Verified by driver:', data);
-      
-      // Show professional OTP verified alert
-      Alert.alert(
-        "✅ OTP Verified Successfully!",
-        "Your ride is now starting. Driver is on the way to your destination.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              console.log("OTP verification acknowledged");
-              // Start navigation updates
-              setRealTimeNavigationActive(true);
-              setShowLocationOverlay(false);
-              
-              // Request driver location updates
-              if (acceptedDriver && socket) {
-                socket.emit('requestDriverLocation', {
-                  rideId: currentRideId,
-                  driverId: acceptedDriver.driverId,
-                  priority: 'high'
-                });
-              }
-            }
-          }
-        ],
-        { 
-          cancelable: false,
-          onDismiss: () => console.log("OTP alert dismissed")
-        }
-      );
-      
-      // Update ride status
-      setRideStatus("started");
-      setRealTimeNavigationActive(true);
-      setShowLocationOverlay(false);
-      
-      console.log('🎯 REAL-TIME NAVIGATION ACTIVATED AFTER OTP');
-    });
-  }
-  return () => {
-    if (socket) socket.off("otpVerified");
-  };
-}, [currentRideId, acceptedDriver]);
+
 
     socket.on("driverStartedRide", async (data) => {
       try {
