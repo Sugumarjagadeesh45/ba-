@@ -2869,6 +2869,8 @@ const rideData = {
 });
 
 
+
+
     socket.on("driverLiveLocation", async (data) => {
       try {
         const { rideId, driverId, latitude, longitude } = data;
