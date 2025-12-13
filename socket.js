@@ -2902,9 +2902,12 @@ socket.on("acceptRide", async (data, callback) => {
 
 // In acceptRide function in backend socket.js
 
+// In socket.js - acceptRide function
+
 // ✅ BROADCAST TO USER WHO BOOKED THE RIDE
 const userRoom = ride.user?.toString() || ride.userId?.toString();
 if (userRoom) {
+  console.log(`📡 Emitting rideAccepted to user room: ${userRoom}`);
   io.to(userRoom).emit("rideAccepted", {
     ...rideData,
     message: "Driver accepted your ride!",
@@ -2918,8 +2921,8 @@ if (userRoom) {
 }
 
 // ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
-// But don't emit to the user who booked the ride
-io.emit("rideAlreadyTaken", {
+// Use io.except to exclude the user who booked the ride
+io.except(userRoom).emit("rideAlreadyTaken", {
   rideId: data.rideId,
   takenBy: data.driverName || "Driver",
   driverId: data.driverId,
