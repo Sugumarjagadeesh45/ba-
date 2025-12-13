@@ -2750,75 +2750,130 @@ const rideData = {
     });
 
 
-    socket.on("acceptRide", async (data, callback) => {
+    // Update the acceptRide function in the backend
+socket.on("acceptRide", async (data, callback) => {
   console.log("🚨 ===== BACKEND ACCEPT RIDE START =====");
-  
+  console.log("📥 Acceptance Data:", { rideId: data.rideId, driverId: data.driverId });
+
   try {
+    console.log(`🔍 Looking for ride: ${data.rideId}`);
+    
     const ride = await Ride.findOne({ RAID_ID: data.rideId })
       .populate('user', 'phoneNumber mobile name');
-    
+
     if (!ride) {
-      callback({ success: false, message: "Ride not found" });
+      console.error(`❌ Ride ${data.rideId} not found in database`);
+      if (typeof callback === "function") {
+        callback({ success: false, message: "Ride not found" });
+      }
       return;
     }
-    
+
+    // Check ride status
     if (ride.status !== 'pending') {
-      callback({ 
-        success: false, 
-        message: `Ride already ${ride.status}`,
-        currentStatus: ride.status
-      });
+      console.log(`❌ Ride ${data.rideId} is already ${ride.status}`);
+      
+      if (typeof callback === "function") {
+        callback({ 
+          success: false, 
+          message: `Ride already ${ride.status}`,
+          currentStatus: ride.status
+        });
+      }
       return;
     }
-    
-    // ✅ Get driver's ACTUAL current location
+
+    // Get driver location...
     let driverCurrentLocation = null;
-    let driverLat, driverLng;
-    
     if (activeDriverSockets.has(data.driverId)) {
       const driverData = activeDriverSockets.get(data.driverId);
       driverCurrentLocation = {
         latitude: driverData.location.latitude,
         longitude: driverData.location.longitude
       };
-      driverLat = driverData.location.latitude;
-      driverLng = driverData.location.longitude;
-      console.log(`📍 Driver ACTUAL socket location:`, driverCurrentLocation);
+      console.log(`📍 Driver ${data.driverId} ACTUAL location:`, driverCurrentLocation);
     } else {
       const driver = await Driver.findOne({ driverId: data.driverId });
       if (driver && driver.location && driver.location.coordinates) {
-        driverLat = driver.location.coordinates[1];
-        driverLng = driver.location.coordinates[0];
-        driverCurrentLocation = { latitude: driverLat, longitude: driverLng };
-        console.log(`📍 Driver DB location:`, driverCurrentLocation);
+        driverCurrentLocation = {
+          latitude: driver.location.coordinates[1],
+          longitude: driver.location.coordinates[0]
+        };
+        console.log(`📍 Driver ${data.driverId} DB location:`, driverCurrentLocation);
       }
     }
-    
-    // Update ride with driver info
+
+    if (!driverCurrentLocation) {
+      console.error(`❌ Could not get driver ${data.driverId} location`);
+      if (typeof callback === "function") {
+        callback({ success: false, message: "Could not get driver location" });
+      }
+      return;
+    }
+
+    // Get driver's mobile
+    const driver = await Driver.findOne({ driverId: data.driverId });
+    const driverMobile = driver?.phone || driver?.phoneNumber || "N/A";
+
+    // Get user's ACTUAL mobile number
+    let userMobile = "Contact Admin";
+    if (ride.userMobile && ride.userMobile !== "Contact Admin") {
+      userMobile = ride.userMobile;
+    } else if (ride.userPhone && ride.userPhone !== "Contact Admin") {
+      userMobile = ride.userPhone;
+    } else if (ride.user && ride.user.phoneNumber) {
+      userMobile = ride.user.phoneNumber;
+    } else if (ride.user && ride.user.mobile) {
+      userMobile = ride.user.mobile;
+    }
+
+    // Update ride
     const updatedRide = await Ride.findOneAndUpdate(
       { RAID_ID: data.rideId, status: 'pending' },
       {
         driverId: data.driverId,
         driverName: data.driverName || "Driver",
-        driverMobile: driver?.phone || driver?.phoneNumber || "N/A",
+        driverMobile: driverMobile,
         status: 'accepted',
         acceptedAt: new Date(),
         driverLocationAtAcceptance: driverCurrentLocation
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
-    
-    // ✅ Prepare response with ACTUAL driver location
-    const responseData = {
+
+    if (!updatedRide) {
+      console.log(`⚠️ Could not update ride ${data.rideId}`);
+      if (typeof callback === "function") {
+        callback({ 
+          success: false, 
+          message: "Ride was just accepted by another driver"
+        });
+      }
+      return;
+    }
+
+    await Driver.findOneAndUpdate(
+      { driverId: data.driverId },
+      {
+        status: 'onRide',
+        lastRideId: data.rideId,
+        lastUpdate: new Date()
+      }
+    );
+
+    console.log(`✅ Ride ${data.rideId} accepted by ${data.driverId}`);
+
+    // Prepare ride data for response
+    const rideData = {
       success: true,
       rideId: ride.RAID_ID,
       driverId: data.driverId,
       driverName: data.driverName || "Driver",
-      driverMobile: driver?.phone || driver?.phoneNumber || "N/A",
-      // ✅ CRITICAL: Send driver's ACTUAL location, not pickup location
+      driverMobile: driverMobile,
+      userMobile: userMobile,
       driverCurrentLocation: driverCurrentLocation,
-      driverLat: driverLat,
-      driverLng: driverLng,
+      driverLat: driverCurrentLocation.latitude,
+      driverLng: driverCurrentLocation.longitude,
       locationType: 'driver_current_location',
       pickup: {
         addr: ride.pickupLocation || ride.pickup?.addr || "Pickup location",
@@ -2830,41 +2885,55 @@ const rideData = {
         lat: ride.dropoffCoordinates?.latitude || ride.drop?.lat || 0,
         lng: ride.dropoffCoordinates?.longitude || ride.drop?.lng || 0
       },
-      fare: ride.fare || 0,
+      fare: ride.fare || ride.price || 0,
       distance: ride.distance || "0 km",
-      vehicleType: ride.rideType || "taxi",
+      vehicleType: ride.rideType || ride.vehicleType || "taxi",
       userName: ride.name || "Customer",
-      userMobile: ride.userMobile || ride.userPhone || "Contact Admin",
+      userPhone: userMobile,
       otp: ride.otp,
+      status: 'accepted',
       timestamp: new Date().toISOString()
     };
-    
-    console.log("📤 Sending ride acceptance with ACTUAL driver location");
-    
-    // ✅ Send to accepting driver
-    callback(responseData);
-    
-    // ✅ Send to user
-    const userRoom = ride.user?.toString();
-    if (userRoom) {
-      io.to(userRoom).emit("rideAccepted", responseData);
-      console.log(`✅ Sent ride acceptance to user room: ${userRoom}`);
+
+    // ✅ SEND TO DRIVER
+    if (typeof callback === "function") {
+      callback(rideData);
     }
-    
-    // ✅ Notify other drivers ride is taken
-    socket.broadcast.emit("rideAlreadyTaken", {
+
+    // ✅ BROADCAST TO USER WHO BOOKED THE RIDE
+    const userRoom = ride.user?.toString() || ride.userId?.toString();
+    if (userRoom) {
+      io.to(userRoom).emit("rideAccepted", {
+        ...rideData,
+        message: "Driver accepted your ride!",
+        driverDetails: {
+          name: data.driverName || "Driver",
+          currentLocation: driverCurrentLocation,
+          vehicleType: ride.rideType || "taxi",
+          mobile: driverMobile
+        }
+      });
+    }
+
+    // ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
+    io.emit("rideAlreadyTaken", {
       rideId: data.rideId,
       takenBy: data.driverName || "Driver",
       driverId: data.driverId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      message: "This ride has been accepted by another driver."
     });
-    
+
+    console.log("✅ Ride acceptance process completed with ACTUAL user mobile");
+
   } catch (error) {
-    console.error(`❌ ERROR ACCEPTING RIDE:`, error);
-    callback({
-      success: false,
-      message: "Server error: " + error.message
-    });
+    console.error(`❌ ERROR ACCEPTING RIDE ${data.rideId}:`, error);
+    if (typeof callback === "function") {
+      callback({
+        success: false,
+        message: "Server error: " + error.message
+      });
+    }
   }
 });
 
