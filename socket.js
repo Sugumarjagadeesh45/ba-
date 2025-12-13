@@ -2899,22 +2899,30 @@ const rideData = {
 
 
     
-    // ✅ NOTIFY USER WITH CORRECT DRIVER LOCATION
-    const userRoom = ride.user ? ride.user.toString() : ride.userId?.toString();
-    if (userRoom) {
-      console.log(`📡 Notifying user room: ${userRoom}`);
-      
-      io.to(userRoom).emit("rideAccepted", {
-        ...rideData,
-        message: "Driver accepted your ride!",
-        driverDetails: {
-          name: data.driverName || "Driver",
-          currentLocation: driverCurrentLocation,
-          vehicleType: ride.rideType || "taxi",
-          mobile: driverMobile
-        }
-      });
+
+    
+    // In the acceptRide function, after updating the ride:
+socket.emit("rideTakenByOther", {
+  rideId: data.rideId,
+  takenBy: data.driverName || "Driver",
+  driverId: data.driverId,
+  timestamp: new Date().toISOString()
+});
+
+// Also add this to notify the user who booked the ride:
+const userRoom = ride.user?.toString() || ride.userId?.toString();
+if (userRoom) {
+  io.to(userRoom).emit("rideAccepted", {
+    ...rideData,
+    message: "Driver accepted your ride!",
+    driverDetails: {
+      name: data.driverName || "Driver",
+      currentLocation: driverCurrentLocation,
+      vehicleType: ride.rideType || "taxi",
+      mobile: driverMobile
     }
+  });
+}
 
     // ✅ BROADCAST TO ALL OTHER DRIVERS THAT RIDE IS TAKEN
     io.emit("rideAlreadyTaken", {
@@ -2926,44 +2934,6 @@ const rideData = {
     });
 
     console.log("✅ Ride acceptance process completed with ACTUAL user mobile");
-
-
-
-
-
-if (updatedRide) {
-      // ✅ NOTIFY USER
-      const userRoom = ride.user ? ride.user.toString() : ride.userId?.toString();
-      if (userRoom) {
-        io.to(userRoom).emit("rideAccepted", {
-          success: true,
-          rideId: ride.RAID_ID,
-          driverId: data.driverId,
-          driverName: data.driverName || "Driver",
-          driverMobile: driverMobile,
-          userMobile: userMobile,
-          pickup: ride.pickup,
-          drop: ride.drop,
-          fare: ride.fare,
-          distance: ride.distance,
-          vehicleType: ride.rideType,
-          userName: ride.name,
-          otp: ride.otp,
-          message: "Driver accepted your ride!"
-        });
-      }
-      
-      // ✅ BROADCAST TO OTHER DRIVERS
-      io.emit("rideTakenByOther", {
-        rideId: data.rideId,
-        takenBy: data.driverName || "Driver",
-        driverId: data.driverId,
-        timestamp: new Date().toISOString(),
-        message: "This ride has been accepted by another driver."
-      });
-    }
-
-
 
   } catch (error) {
     console.error(`❌ ERROR ACCEPTING RIDE ${data.rideId}:`, error);
