@@ -3328,6 +3328,39 @@ const init = (server) => {
       }
     });
 
+
+
+
+
+
+
+
+    // Handle OTP verification from driver
+    socket.on("otpVerified", (data) => {
+      try {
+        const { rideId, userId } = data;
+        console.log(`✅ OTP Verified for ride ${rideId}, notifying user ${userId}`);
+        
+        // Forward to the specific user
+        if (userId) {
+          io.to(userId.toString()).emit("otpVerified", data);
+          console.log(`✅ OTP verification notification sent to user ${userId}`);
+        } else {
+          // If userId not provided, find it from the ride
+          const ride = rides[rideId];
+          if (ride && ride.userId) {
+            io.to(ride.userId.toString()).emit("otpVerified", data);
+            console.log(`✅ OTP verification notification sent to user ${ride.userId}`);
+          }
+        }
+      } catch (error) {
+        console.error("❌ Error handling OTP verification:", error);
+      }
+    });
+
+
+    
+
     socket.on("driverStartedRide", async (data) => {
       try {
         const { rideId, driverId, userId } = data;
@@ -4893,28 +4926,28 @@ module.exports = { init, getIO, broadcastPricesToAllUsers };
 //       }
 //     });
 
-//     // Handle OTP verification from driver
-//     socket.on("otpVerified", (data) => {
-//       try {
-//         const { rideId, userId } = data;
-//         console.log(`✅ OTP Verified for ride ${rideId}, notifying user ${userId}`);
+    // // Handle OTP verification from driver
+    // socket.on("otpVerified", (data) => {
+    //   try {
+    //     const { rideId, userId } = data;
+    //     console.log(`✅ OTP Verified for ride ${rideId}, notifying user ${userId}`);
         
-//         // Forward to the specific user
-//         if (userId) {
-//           io.to(userId.toString()).emit("otpVerified", data);
-//           console.log(`✅ OTP verification notification sent to user ${userId}`);
-//         } else {
-//           // If userId not provided, find it from the ride
-//           const ride = rides[rideId];
-//           if (ride && ride.userId) {
-//             io.to(ride.userId.toString()).emit("otpVerified", data);
-//             console.log(`✅ OTP verification notification sent to user ${ride.userId}`);
-//           }
-//         }
-//       } catch (error) {
-//         console.error("❌ Error handling OTP verification:", error);
-//       }
-//     });
+    //     // Forward to the specific user
+    //     if (userId) {
+    //       io.to(userId.toString()).emit("otpVerified", data);
+    //       console.log(`✅ OTP verification notification sent to user ${userId}`);
+    //     } else {
+    //       // If userId not provided, find it from the ride
+    //       const ride = rides[rideId];
+    //       if (ride && ride.userId) {
+    //         io.to(ride.userId.toString()).emit("otpVerified", data);
+    //         console.log(`✅ OTP verification notification sent to user ${ride.userId}`);
+    //       }
+    //     }
+    //   } catch (error) {
+    //     console.error("❌ Error handling OTP verification:", error);
+    //   }
+    // });
 
 //     // Update the existing driverStartedRide handler to forward to user
 //     socket.on("driverStartedRide", async (data) => {
