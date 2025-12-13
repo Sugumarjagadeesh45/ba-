@@ -2927,6 +2927,44 @@ const rideData = {
 
     console.log("✅ Ride acceptance process completed with ACTUAL user mobile");
 
+
+
+
+
+if (updatedRide) {
+      // ✅ NOTIFY USER
+      const userRoom = ride.user ? ride.user.toString() : ride.userId?.toString();
+      if (userRoom) {
+        io.to(userRoom).emit("rideAccepted", {
+          success: true,
+          rideId: ride.RAID_ID,
+          driverId: data.driverId,
+          driverName: data.driverName || "Driver",
+          driverMobile: driverMobile,
+          userMobile: userMobile,
+          pickup: ride.pickup,
+          drop: ride.drop,
+          fare: ride.fare,
+          distance: ride.distance,
+          vehicleType: ride.rideType,
+          userName: ride.name,
+          otp: ride.otp,
+          message: "Driver accepted your ride!"
+        });
+      }
+      
+      // ✅ BROADCAST TO OTHER DRIVERS
+      io.emit("rideTakenByOther", {
+        rideId: data.rideId,
+        takenBy: data.driverName || "Driver",
+        driverId: data.driverId,
+        timestamp: new Date().toISOString(),
+        message: "This ride has been accepted by another driver."
+      });
+    }
+
+
+
   } catch (error) {
     console.error(`❌ ERROR ACCEPTING RIDE ${data.rideId}:`, error);
     if (typeof callback === "function") {
