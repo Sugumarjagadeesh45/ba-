@@ -3255,19 +3255,24 @@ socket.on("otpVerified", async (data) => {
       ride.rideStartTime = new Date();
       await ride.save();
       
-      const userRoom = ride.user?.toString() || userId?.toString();
-      if (userRoom) {
-        io.to(userRoom).emit("otpVerifiedAlert", {
-          rideId: rideId,
-          driverId: driverId,
-          status: 'started',
-          timestamp: new Date().toISOString(),
-          message: "OTP verified! Ride has started.",
-          showAlert: true,
-          alertTitle: "✅ OTP Verified Successfully!",
-          alertMessage: "Your ride is now starting. Driver is on the way to your destination."
-        });
-      }
+
+      // In acceptRide function in backend socket.js
+const userRoom = ride.user?.toString() || ride.userId?.toString();
+if (userRoom) {
+  console.log(`📡 Emitting rideAccepted to user room: ${userRoom}`);
+  io.to(userRoom).emit("rideAccepted", {
+    ...rideData,
+    message: "Driver accepted your ride!",
+    driverDetails: {
+      name: data.driverName || "Driver",
+      currentLocation: driverCurrentLocation,
+      vehicleType: ride.rideType || "taxi",
+      mobile: driverMobile
+    }
+  });
+}
+
+
     }
   } catch (error) {
     console.error("❌ Error handling OTP verification:", error);
