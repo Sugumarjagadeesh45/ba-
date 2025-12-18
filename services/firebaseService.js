@@ -35,7 +35,7 @@ const ensureFirebaseInitialized = () => {
 };
 
 
-// In firebaseService.js - Add this function
+// Add this function if it doesn't exist
 const cleanupInvalidFCMTokens = async (driverId, invalidToken) => {
   try {
     console.log(`🧹 CLEANING UP INVALID FCM TOKEN FOR DRIVER: ${driverId}`);
@@ -43,7 +43,7 @@ const cleanupInvalidFCMTokens = async (driverId, invalidToken) => {
     const Driver = require('../models/driver/driver');
     
     const result = await Driver.findOneAndUpdate(
-      { driverId: driverId, fcmToken: invalidToken },
+      { driverId: driverId },
       { 
         $unset: { fcmToken: 1 },
         $set: { 
@@ -68,52 +68,78 @@ const cleanupInvalidFCMTokens = async (driverId, invalidToken) => {
   }
 };
 
-// Update the sendNotificationToMultipleDrivers function to use cleanup
+
+
+
 const sendNotificationToMultipleDrivers = async (driverTokens, title, body, data = {}) => {
   try {
-    console.log('📱 Starting notification process...');
+    console.log(`🚀 Starting FCM send to ${driverTokens?.length || 0} drivers`);
     
-    const isInitialized = ensureFirebaseInitialized();
-    if (!isInitialized) {
-      throw new Error('Firebase not initialized');
+    // 1. Initialize Firebase
+    let messaging;
+    try {
+      if (!admin.apps || admin.apps.length === 0) {
+        console.log('🔥 Initializing Firebase Admin...');
+        const serviceAccount = require('../service-account-key.json');
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount)
+        });
+      }
+      messaging = admin.messaging();
+      console.log('✅ Firebase Admin ready');
+    } catch (initError) {
+      console.error('❌ Firebase initialization failed:', initError);
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: driverTokens?.length || 0,
+        errors: ['Firebase initialization failed']
+      };
     }
 
-    const validTokens = driverTokens.filter((token) => {
-      const isValid = token && typeof token === 'string' && token.length > 10;
-      if (!isValid) {
-        console.log(`❌ Invalid token format: ${token}`);
-      }
-      return isValid;
-    });
-
-    console.log(`✅ Valid tokens: ${validTokens.length}/${driverTokens.length}`);
-
-    if (validTokens.length === 0) {
+    // 2. Validate tokens
+    if (!driverTokens || !Array.isArray(driverTokens)) {
+      console.error('❌ Invalid driverTokens:', driverTokens);
       return {
         success: false,
         successCount: 0,
         failureCount: 0,
-        errors: ['No valid FCM tokens found'],
+        errors: ['Invalid driver tokens array']
       };
     }
 
+    const validTokens = driverTokens.filter(token => {
+      return token && typeof token === 'string' && token.length > 10;
+    });
+
+    console.log(`📱 Valid tokens: ${validTokens.length}/${driverTokens.length}`);
+
+    if (validTokens.length === 0) {
+      console.log('⚠️ No valid FCM tokens to send');
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: driverTokens.length,
+        errors: ['No valid FCM tokens']
+      };
+    }
+
+    // 3. Create message - SIMPLIFIED VERSION
     const message = {
       tokens: validTokens,
       notification: {
-        title: title,
-        body: body
+        title: title || 'New Ride Request',
+        body: body || 'You have a new ride request'
       },
       data: {
-        ...data,
         type: data.type || 'ride_request',
-        click_action: 'FLUTTER_NOTIFICATION_CLICK'
+        rideId: data.rideId || '',
+        vehicleType: data.vehicleType || '',
+        fare: data.fare || '0',
+        ...data
       },
       android: {
-        priority: 'high',
-        notification: {
-          channelId: 'high_priority_channel',
-          sound: 'default'
-        }
+        priority: 'high'
       },
       apns: {
         payload: {
@@ -125,28 +151,29 @@ const sendNotificationToMultipleDrivers = async (driverTokens, title, body, data
       }
     };
 
-    console.log('📤 Sending FCM notifications...');
-    const response = await admin.messaging().sendEachForMulticast(message);
+    console.log('📄 Sending FCM message with structure:', {
+      tokensCount: message.tokens.length,
+      title: message.notification.title,
+      dataKeys: Object.keys(message.data)
+    });
 
-    console.log('✅ FCM Response - Success:', response.successCount, 'Failed:', response.failureCount);
+    // 4. Send the message
+    const response = await messaging.sendEachForMulticast(message);
 
-    // 🔥 CRITICAL: Clean up invalid tokens automatically
+    console.log('📊 FCM Send Results:', {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      total: validTokens.length
+    });
+
+    // 5. Handle failures
     if (response.failureCount > 0) {
-      console.log('🧹 CHECKING FOR INVALID TOKENS TO CLEAN UP...');
-      
-      for (let i = 0; i < response.responses.length; i++) {
-        const resp = response.responses[i];
-        if (!resp.success && resp.error) {
-          console.log(`❌ Token ${i + 1} failed:`, resp.error.message);
-          
-          // Remove invalid tokens from database
-          if (resp.error.code === 'messaging/registration-token-not-registered') {
-            console.log(`🗑️ Token is invalid, scheduling cleanup...`);
-            // We need to know which driver this token belongs to
-            // This will be handled by the calling function
-          }
+      console.log('⚠️ Some FCM sends failed:');
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`   Token ${idx}:`, resp.error?.message || 'Unknown error');
         }
-      }
+      });
     }
 
     return {
@@ -154,18 +181,20 @@ const sendNotificationToMultipleDrivers = async (driverTokens, title, body, data
       successCount: response.successCount,
       failureCount: response.failureCount,
       totalTokens: validTokens.length,
-      responses: response.responses,
       errors: response.responses
-        .filter((r) => !r.success)
-        .map((r) => r.error?.message || 'Unknown error'),
+        .filter(r => !r.success)
+        .map(r => r.error?.message || 'Unknown error')
     };
+
   } catch (error) {
-    console.error('❌ FCM Error:', error);
+    console.error('❌ FCM send error:', error.message);
+    console.error('❌ Stack trace:', error.stack);
+    
     return {
       success: false,
       successCount: 0,
       failureCount: driverTokens?.length || 0,
-      errors: [error.message],
+      errors: [error.message]
     };
   }
 };
@@ -180,58 +209,7 @@ const sendNotificationToDriver = async (driverId, notificationData) => {
       return { success: false, error: 'Driver not found or no FCM token' };
     }
 
-    // 2. CORRECT FCM message structure
-    const message = {
-      token: driver.fcmToken,
-      notification: {
-        title: notificationData.title,
-        body: notificationData.body,
-      },
-      data: {
-        // All ride data goes here - ALL VALUES AS STRINGS
-        type: 'ride_request',
-        rideId: notificationData.data.rideId || '',
-        pickup: typeof notificationData.data.pickup === 'string' 
-          ? notificationData.data.pickup 
-          : JSON.stringify(notificationData.data.pickup),
-        drop: typeof notificationData.data.drop === 'string'
-          ? notificationData.data.drop
-          : JSON.stringify(notificationData.data.drop),
-        fare: notificationData.data.fare?.toString() || '0',
-        distance: notificationData.data.distance || '0 km',
-        userName: notificationData.data.userName || 'Customer',
-        userMobile: notificationData.data.userMobile || 'N/A',
-        vehicleType: notificationData.data.vehicleType || 'taxi',
-        timestamp: new Date().toISOString(),
-        priority: 'high',
-        click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        sound: 'notification', // Sound in data for custom handling
-        channelId: 'high_priority_channel'
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'high_priority_channel',
-          sound: 'notification',
-          defaultSound: true,
-          defaultVibrateTimings: true,
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-            contentAvailable: true,
-          }
-        }
-      },
-      webpush: {
-        headers: {
-          Urgency: 'high'
-        }
-      }
-    };
+
 
     console.log('📤 Sending FCM message:', JSON.stringify(message, null, 2));
 

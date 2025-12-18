@@ -154,37 +154,84 @@ exports.updateRidePrices = async (req, res) => {
 };
 
 
-// In your ridePriceController.js - Update the calculateRidePrice function
-exports.calculateRidePrice = async (vehicleType, distance) => {
+// // In your ridePriceController.js - Update the calculateRidePrice function
+// exports.calculateRidePrice = async (vehicleType, distance) => {
+//   try {
+//     console.log(`💰 BACKEND CALCULATING PRICE: ${distance}km for ${vehicleType}`);
+    
+//     // Get the price from database
+//     const priceDoc = await RidePrice.findOne({ 
+//       vehicleType, 
+//       isActive: true 
+//     });
+    
+//     console.log(`📊 Database price document for ${vehicleType}:`, priceDoc);
+    
+//     // ✅ NO DEFAULT FALLBACK - Only use database prices
+//     if (!priceDoc) {
+//       console.log(`⏳ No price found for ${vehicleType} in database, cannot calculate price`);
+//       return 0;
+//     }
+    
+//     const pricePerKm = priceDoc.pricePerKm;
+//     const totalPrice = distance * pricePerKm;
+//     const roundedPrice = Math.round(totalPrice * 100) / 100;
+    
+//     console.log(`💰 BACKEND PRICE CALCULATION: ${distance}km ${vehicleType} × ₹${pricePerKm}/km = ₹${roundedPrice}`);
+    
+//     return roundedPrice;
+//   } catch (error) {
+//     console.error('❌ Error calculating ride price in backend:', error);
+//     return 0;
+//   }
+// };
+// In controllers/ridePriceController.js
+exports.calculateRidePrice = async (vehicleType, distanceKm) => {
   try {
-    console.log(`💰 BACKEND CALCULATING PRICE: ${distance}km for ${vehicleType}`);
+    console.log(`💰 Calculating price for ${distanceKm}km ${vehicleType}`);
     
-    // Get the price from database
-    const priceDoc = await RidePrice.findOne({ 
-      vehicleType, 
-      isActive: true 
-    });
+    // Get current prices
+    const prices = await RidePrice.findOne({});
     
-    console.log(`📊 Database price document for ${vehicleType}:`, priceDoc);
-    
-    // ✅ NO DEFAULT FALLBACK - Only use database prices
-    if (!priceDoc) {
-      console.log(`⏳ No price found for ${vehicleType} in database, cannot calculate price`);
-      return 0;
+    if (!prices) {
+      console.log('❌ No ride prices found in database');
+      return distanceKm * 10; // Default fallback
     }
     
-    const pricePerKm = priceDoc.pricePerKm;
-    const totalPrice = distance * pricePerKm;
-    const roundedPrice = Math.round(totalPrice * 100) / 100;
+    let pricePerKm = 0;
     
-    console.log(`💰 BACKEND PRICE CALCULATION: ${distance}km ${vehicleType} × ₹${pricePerKm}/km = ₹${roundedPrice}`);
+    // Make sure we're using UPPERCASE
+    const type = vehicleType.toUpperCase();
     
-    return roundedPrice;
+    switch(type) {
+      case 'BIKE':
+        pricePerKm = prices.bike || 15;
+        break;
+      case 'TAXI':
+        pricePerKm = prices.taxi || 40;
+        break;
+      case 'PORT':
+        pricePerKm = prices.port || 75;
+        break;
+      default:
+        pricePerKm = 10;
+    }
+    
+    console.log(`📊 Price per km for ${type}: ₹${pricePerKm}`);
+    
+    const total = distanceKm * pricePerKm;
+    console.log(`✅ Calculated total: ${distanceKm}km × ₹${pricePerKm} = ₹${total}`);
+    
+    return Math.round(total);
   } catch (error) {
-    console.error('❌ Error calculating ride price in backend:', error);
-    return 0;
+    console.error('❌ Error calculating ride price:', error);
+    return distanceKm * 10; // Fallback
   }
 };
+
+
+
+
 
 exports.getCurrentPrices = () => {
   return currentPrices;

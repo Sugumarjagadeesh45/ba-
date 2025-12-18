@@ -1656,6 +1656,9 @@ app.use(cors({
   exposedHeaders: ["Content-Length", "Content-Type", "Authorization"]
 }));
 
+
+
+
 // ✅ Add manual CORS headers for all requests
 app.use((req, res, next) => {
   console.log(`🌐 ${req.method} ${req.url} from ${req.headers.origin || 'unknown origin'}`);
@@ -2114,6 +2117,57 @@ app.post('/api/rides/book-ride-enhanced', async (req, res) => {
     });
   }
 });
+
+
+
+
+
+
+
+// Add this debug endpoint to app.js
+app.get('/api/debug/drivers-by-vehicle', async (req, res) => {
+  try {
+    const Driver = require('./models/driver/driver');
+    
+    const drivers = await Driver.find({})
+      .select('driverId name phone vehicleType fcmToken status')
+      .lean();
+    
+    const byVehicleType = {};
+    drivers.forEach(driver => {
+      const type = driver.vehicleType || 'UNKNOWN';
+      if (!byVehicleType[type]) {
+        byVehicleType[type] = [];
+      }
+      byVehicleType[type].push({
+        driverId: driver.driverId,
+        name: driver.name,
+        hasFCM: !!driver.fcmToken,
+        status: driver.status
+      });
+    });
+    
+    res.json({
+      success: true,
+      totalDrivers: drivers.length,
+      byVehicleType,
+      drivers: drivers.map(d => ({
+        driverId: d.driverId,
+        name: d.name,
+        vehicleType: d.vehicleType,
+        fcmToken: d.fcmToken ? 'YES' : 'NO',
+        status: d.status
+      }))
+    });
+  } catch (error) {
+    console.error('Driver debug error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+
+
 
 // ✅ UPDATE RIDE BOOKING ENDPOINT WITH STRICT VEHICLE TYPE FILTER
 app.post('/api/rides/book-ride-strict', async (req, res) => {

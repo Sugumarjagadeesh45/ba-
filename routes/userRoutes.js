@@ -70,6 +70,27 @@ router.get('/debug-endpoints', (req, res) => {
 router.post('/live-location', userController.saveLiveLocation);
 
 
+
+// In your backend routes (e.g., userRoutes.js)
+router.post('/update-fcm-token', async (req, res) => {
+  try {
+    const { userId, fcmToken, platform } = req.body;
+    
+    await User.findByIdAndUpdate(userId, {
+      fcmToken,
+      fcmTokenUpdatedAt: new Date(),
+      platform
+    });
+    
+    res.json({ success: true, message: 'FCM token updated' });
+  } catch (error) {
+    console.error('❌ Error updating user FCM token:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
+
 router.get('/me', userController.getProfile);
 
 

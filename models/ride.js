@@ -27,7 +27,7 @@ const rideSchema = new mongoose.Schema({
     longitude: { type: Number, required: true }
   },
   fare: { type: Number, required: true },
-  rideType: { type: String, enum: ['bike', 'taxi', 'port', 'mini', 'sedan', 'suv'], required: true },
+  rideType: { type: String, enum: ['TAXI', 'BIKE', 'PORT', 'AUTO', 'taxi', 'bike', 'port', 'auto'], required: true },
   otp: { type: String, required: true },
   distance: { type: String, required: true },
   travelTime: { type: String, required: true },
